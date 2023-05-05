@@ -1,3 +1,7 @@
 name = "notion-sync"
 main = "src/index.ts"
 compatibility_date = "2023-05-04"
+
+kv_namespaces = [
+    { binding = "GOOGLE_SYNC_TOKEN", id = "c89ab7d826ca4222a1ba12fd2ac8bf47",  preview_id = "01d9f241714148df965fea632f1e1970" }
+]
