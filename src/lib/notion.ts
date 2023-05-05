@@ -1,7 +1,6 @@
 import { Client } from "@notionhq/client";
 import { nonNullable, parseTag } from "./util";
 import { ExistingEvents, Event, EventWithPageId } from "../type";
-import { calendar_v3 } from "@googleapis/calendar";
 import { PageObjectResponse, PartialPageObjectResponse, UpdatePageParameters, CreatePageParameters } from "@notionhq/client/build/src/api-endpoints";
 
 const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
@@ -213,7 +212,6 @@ class NotionAPI {
   }
 
   async createEvents(events: Event[]) {
-    console.log(events, "created!!!");
     await Promise.all(
       events.map(async (data) => {
         const parent = await this.getParentTaskFromTag(data?.tag);

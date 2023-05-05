@@ -55,13 +55,12 @@ app.get("/google-calendar/watch", async (c) => {
 });
 
 app.post("/google-calendar/webhook", async (c) => {
-  const lastSync = await c.env.LAST_SYNC.get("lastSync");
-  const elapsed = Date.now() - Number(lastSync);
-  if (elapsed < Config.RATE_LIMIT_MS) {
+  const syncing = await c.env.LAST_SYNC.get("lastSync");
+  if (syncing === "true") {
     c.status(429);
     return c.json({
       success: false,
-      message: "rate limit",
+      message: "Lock",
     });
   }
 
@@ -150,10 +149,9 @@ const watchNotion = async (env: Bindings) => {
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const lastSync = await env.LAST_SYNC.get("lastSync");
-  const elapsed = Date.now() - Number(lastSync);
-  if (elapsed < Config.RATE_LIMIT_MS) {
-    console.error("WatchNotion: rate limit");
+  const syncing = await env.LAST_SYNC.get("lastSync");
+  if (syncing === "true") {
+    console.error("WatchNotion: Lock");
     return;
   }
   const events = await notion.getExistingEvents();
@@ -172,7 +170,7 @@ const watchNotion = async (env: Bindings) => {
   const isUpdated = updatedEvents.length > 0;
   const isNew = newEvents.length > 0;
 
-  await env.LAST_SYNC.put("lastSync", Date.now().toString());
+  await env.LAST_SYNC.put("lastSync", "true");
 
   try {
     if (isDeleted) {
@@ -190,6 +188,8 @@ const watchNotion = async (env: Bindings) => {
     return;
   }
 
+  await env.LAST_SYNC.put("lastSync", "false");
+
   return console.log("WatchNotion: Synced successfully.");
 };
 
@@ -197,7 +197,7 @@ export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     switch (event.cron) {
-      case "*/3 * * * *":
+      case "*/1 * * * *":
         await watchNotion(env);
         break;
       case "0 0 * * sun":

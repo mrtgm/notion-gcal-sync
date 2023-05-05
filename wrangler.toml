@@ -9,4 +9,4 @@ kv_namespaces = [
 ]
 
 [triggers]
-crons = ["0 0 * * sun","*/3 * * * *"]
+crons = ["0 0 * * sun","*/1 * * * *"]
