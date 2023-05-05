@@ -79,6 +79,69 @@ class GCalAPI {
       nextSyncToken: res.nextSyncToken,
     };
   }
+
+  async deleteEvents(events: Event[]) {
+    const promises = events.map((event) => {
+      const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
+      return fetch(url, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this._accessToken}`,
+        },
+      });
+    });
+    await Promise.all(promises);
+    console.log("Google Calendar: deleted events");
+  }
+
+  async createEvents(events: Event[]) {
+    const promises = events.map((event) => {
+      const url = `${this.baseUrl}/${this.calendarId}/events`;
+      return fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this._accessToken}`,
+        },
+        body: JSON.stringify({
+          summary: `${event.tag} ${event.title}`,
+          start: {
+            dateTime: event.start,
+          },
+          end: {
+            dateTime: event.end,
+          },
+        }),
+      });
+    });
+    await Promise.all(promises);
+    console.log("Google Calendar: created events");
+  }
+
+  async updateEvents(events: Event[]) {
+    const promises = events.map((event) => {
+      const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
+      return fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this._accessToken}`,
+        },
+        body: JSON.stringify({
+          summary: `${event.tag} ${event.title}`,
+          start: {
+            dateTime: event.start,
+          },
+          end: {
+            dateTime: event.end,
+          },
+        }),
+      });
+    });
+    await Promise.all(promises);
+    console.log("Google Calendar: updated events");
+  }
 }
 
 export default GCalAPI;

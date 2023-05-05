@@ -11,14 +11,48 @@ export const parseTag = (str: string) => {
   };
 };
 
-export const resolveDiff = ({ notionEvent, gcalEvent }: { notionEvent: EventWithPageId; gcalEvent: Event }) => {
-  // Google Calendar に存在するが Notion に存在しないイベント
+// Notion -> GCal 方向への差分を比較
+export const resolveDiffsFromNotion = ({ notionEvents, gcalEvents }: { notionEvents: EventWithPageId[]; gcalEvents: Event[] }) => {
+  // Google Calendar ❌ | Notion ✅
+  const newEvents = notionEvents?.filter((event) => {
+    return !event.id;
+  });
+
+  // Google Calendar ✅ | Notion ❌
+  const deletedEvents = gcalEvents.filter((v) => {
+    return !notionEvents?.some((event) => event?.id === v?.id);
+  });
+
+  // Google Calendar ✅ | Notion ✅
+  const updatedEvents = notionEvents?.reduce((acc: EventWithPageId[], event: EventWithPageId) => {
+    if (!event.id) return [];
+    const index = gcalEvents.findIndex((v) => v?.id === event.id);
+    if (index < 0) return acc;
+
+    return [
+      ...acc,
+      {
+        ...event,
+      },
+    ];
+  }, []);
+
+  return {
+    newEvents,
+    deletedEvents,
+    updatedEvents,
+  };
+};
+
+// GCal -> Notion 方向への差分を比較
+export const resolveDiffFromGCal = ({ notionEvent, gcalEvent }: { notionEvent: EventWithPageId | undefined | null; gcalEvent: Event }) => {
+  // Google Calendar ✅ | Notion ❌
   const isNew = gcalEvent && !notionEvent;
 
-  // Google Calendar で削除フラグの立てられたイベント
+  // Google Calendar ❌ (deletion flag) | Notion ✅
   const isDeleted = notionEvent && gcalEvent.deleted;
 
-  // Notion にも Google Calendar にも存在するイベント
+  // Google Calendar ✅ | Notion ✅
   const isUpdated = notionEvent && gcalEvent;
 
   return {
@@ -28,16 +62,19 @@ export const resolveDiff = ({ notionEvent, gcalEvent }: { notionEvent: EventWith
   };
 };
 
-export const resolveDiffs = ({ notionEvents, gcalEvents }: { notionEvents: EventWithPageId[]; gcalEvents: Event[] }) => {
+export const resolveDiffsFromGCal = ({ notionEvents, gcalEvents }: { notionEvents: EventWithPageId[]; gcalEvents: Event[] }) => {
+  // Google Calendar ✅ | Notion ❌
   const newEvents = gcalEvents?.filter((event) => {
     if (!event.id) return false;
     return !notionEvents.some((v) => v?.id === event.id);
   });
 
+  // Google Calendar ❌ | Notion ✅
   const deletedEvents = notionEvents.filter((v) => {
     return !gcalEvents?.some((event) => event?.id === v?.id);
   });
 
+  // Google Calendar ✅ | Notion ✅
   const updatedEvents = gcalEvents?.reduce((acc: EventWithPageId[], event: Event) => {
     if (!event.id) return [];
     const index = notionEvents.findIndex((v) => v?.id === event.id);

@@ -1,20 +1,9 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `wrangler dev src/index.ts` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `wrangler publish src/index.ts --name my-worker` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-import { Env, Hono, HonoRequest } from "hono";
+import { Hono } from "hono";
 import { getGoogleAuthToken } from "./lib/auth";
-import { calendar_v3 } from "@googleapis/calendar";
-import { Client } from "@notionhq/client";
 import NotionAPI from "./lib/notion";
+import Config from "./config";
 import GCalAPI from "./lib/gcal";
-import { ExistingEvents, Event } from "./type";
-import { resolveDiff, resolveDiffs } from "./lib/util";
+import { resolveDiffsFromGCal, resolveDiffFromGCal, resolveDiffsFromNotion } from "./lib/util";
 
 type Bindings = {
   google_email: string;
@@ -23,11 +12,17 @@ type Bindings = {
   notion_token: string;
   notion_database_id: string;
   GOOGLE_SYNC_TOKEN: KVNamespace;
+  NOTION_CACHE: KVNamespace;
+  LAST_SYNC: KVNamespace;
 };
 
 const app = new Hono<{
   Bindings: Bindings;
 }>();
+
+app.get("/", async (c) => {
+  return c.text("ok");
+});
 
 app.get("/google-calendar/watch", async (c) => {
   const scope = "https://www.googleapis.com/auth/calendar";
@@ -35,16 +30,16 @@ app.get("/google-calendar/watch", async (c) => {
   const url = `https://www.googleapis.com/calendar/v3/calendars/${c.env.google_calendar_id}/events/watch`;
 
   if (res.success) {
-    const response = await fetch(url, {
+    await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${res.data}`,
       },
       body: JSON.stringify({
-        id: "notion-sync",
+        id: "notion-sync-worker",
         type: "web_hook",
-        address: "https://remove-hobby-combining-willing.trycloudflare.com/google-calendar/webhook",
+        address: "https://occasionally-celebration-kentucky-junior.trycloudflare.com/google-calendar/webhook",
       }),
     });
     return c.json({
@@ -64,34 +59,45 @@ app.post("/google-calendar/webhook", async (c) => {
   const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
   const token = await c.env.GOOGLE_SYNC_TOKEN.get("syncToken");
 
+  const lastSync = await c.env.LAST_SYNC.get("lastSync");
+  const elapsed = Date.now() - Number(lastSync);
+  if (elapsed < Config.RATE_LIMIT_MS) {
+    c.status(429);
+    return c.json({
+      success: false,
+      message: "rate limit",
+    });
+  }
+
   const events = await gcal.getExistingEvents(token);
-  if (!events.items || events.items.length === 0) return;
+  if (!events.items || events.items.length === 0) return c.status(404);
+
+  const existingNotionEvent = await notion.getExistingEventById(events.items[0].id);
+  const existingGCalEvent = events.items[0];
 
   const nextSyncToken = events.nextSyncToken;
   if (nextSyncToken) c.env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
 
-  const existingNotionEvent = (await notion.getExistingEvents())[0];
-  const existingGCalEvent = events.items[0];
-
-  const { isDeleted, isUpdated, isNew } = resolveDiff({
+  const { isDeleted, isUpdated, isNew } = resolveDiffFromGCal({
     notionEvent: existingNotionEvent,
     gcalEvent: existingGCalEvent,
   });
 
-  if (isDeleted) {
-    await notion.deleteEvent(existingNotionEvent);
-  }
-
-  if (isUpdated) {
-    const updatedEvent = {
-      ...existingNotionEvent,
-      ...existingGCalEvent,
-    };
-    await notion.updateEvent(updatedEvent);
-  }
-
-  if (isNew) {
-    await notion.createEvent(existingGCalEvent);
+  try {
+    if (isDeleted && existingNotionEvent) {
+      await notion.deleteEvent(existingNotionEvent);
+    } else if (isUpdated) {
+      const updatedEvent = {
+        ...existingNotionEvent!,
+        ...existingGCalEvent,
+      };
+      await notion.updateEvent(updatedEvent);
+    } else if (isNew) {
+      await notion.createEvent(existingGCalEvent);
+    }
+  } catch (e) {
+    console.error(e);
+    return c.status(500);
   }
 
   return c.json({
@@ -100,38 +106,102 @@ app.post("/google-calendar/webhook", async (c) => {
   });
 });
 
-// TODO: POST に変更
-app.get("/", async (c) => {
-  const notion = new NotionAPI(c.env.notion_token, c.env.notion_database_id);
-  const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
+const watchGCal = async (env: Bindings) => {
+  const notion = new NotionAPI(env.notion_token, env.notion_database_id);
+  const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
   const events = await gcal.getExistingEvents();
-  if (!events.items || events.items.length === 0) return;
+  if (!events.items || events.items.length === 0) return console.log("WatchGCal: No events found.");
 
   // Webhook 経由での差分更新用に SyncToken を保存
   const nextSyncToken = events.nextSyncToken;
-  if (nextSyncToken) c.env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
+  if (nextSyncToken) env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
 
   const existingNotionEvents = await notion.getExistingEvents();
 
-  const { newEvents, deletedEvents, updatedEvents } = resolveDiffs({
+  const { newEvents, deletedEvents, updatedEvents } = resolveDiffsFromGCal({
     notionEvents: existingNotionEvents,
     gcalEvents: events.items,
   });
 
-  if (deletedEvents.length) {
-    await notion.deleteEvents(deletedEvents);
+  const isDeleted = deletedEvents?.length > 0;
+  const isUpdated = updatedEvents?.length > 0;
+  const isNew = newEvents?.length > 0;
+
+  try {
+    if (isDeleted) {
+      await notion.deleteEvents(deletedEvents);
+    }
+    if (isUpdated) {
+      await notion.updateEvents(updatedEvents);
+    }
+    if (isNew) {
+      await notion.createEvents(newEvents);
+    }
+  } catch (e) {
+    console.error(e);
+    return;
   }
 
-  if (updatedEvents.length) {
-    await notion.updateEvents(updatedEvents);
+  return console.log("WatchGCal: Synced successfully.");
+};
+
+const watchNotion = async (env: Bindings) => {
+  const notion = new NotionAPI(env.notion_token, env.notion_database_id);
+  const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
+
+  const lastSync = await env.LAST_SYNC.get("lastSync");
+  const elapsed = Date.now() - Number(lastSync);
+  if (elapsed < Config.RATE_LIMIT_MS) {
+    console.error("rate limit");
+    return;
+  }
+  await env.LAST_SYNC.put("lastSync", Date.now().toString());
+
+  const events = await notion.getExistingEvents();
+
+  if (!events || events.length === 0) return console.log("WatchNotion: no events");
+
+  const existingGCalEvents = await gcal.getExistingEvents();
+  if (!existingGCalEvents.items || existingGCalEvents.items.length === 0) return;
+
+  const { deletedEvents, newEvents, updatedEvents } = resolveDiffsFromNotion({
+    notionEvents: events,
+    gcalEvents: existingGCalEvents.items,
+  });
+
+  const isDeleted = deletedEvents.length > 0;
+  const isUpdated = updatedEvents.length > 0;
+  const isNew = newEvents.length > 0;
+
+  try {
+    if (isDeleted) {
+      await gcal.deleteEvents(deletedEvents);
+    }
+    if (isUpdated) {
+      await gcal.updateEvents(updatedEvents);
+    }
+    if (isNew) {
+      await gcal.createEvents(newEvents);
+    }
+  } catch (e) {
+    console.error(e);
+    return;
   }
 
-  if (newEvents.length) {
-    await notion.createEvents(newEvents);
-  }
+  return console.log("WatchNotion: Synced successfully.");
+};
 
-  return c.text(JSON.stringify(events));
-});
-
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    switch (event.cron) {
+      case "*/3 * * * *":
+        await watchNotion(env);
+        break;
+      case "0 0 * * sun":
+        await watchGCal(env);
+        break;
+    }
+  },
+};

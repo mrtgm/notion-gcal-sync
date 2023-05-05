@@ -17,12 +17,16 @@ const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
           },
         ],
       },
-      Date: {
-        date: {
-          start: event.start,
-          end: event.end,
-        },
-      },
+      ...(event.start && event.end
+        ? {
+            Date: {
+              date: {
+                start: event.start,
+                end: event.end,
+              },
+            },
+          }
+        : {}),
       "Event Id": {
         rich_text: [
           {
@@ -49,12 +53,16 @@ const buildCreateOption = (event: Event, parent: PartialPageObjectResponse | nul
           },
         ],
       },
-      Date: {
-        date: {
-          start: event.start,
-          end: event.end,
-        },
-      },
+      ...(event.start && event.end
+        ? {
+            Date: {
+              date: {
+                start: event.start,
+                end: event.end,
+              },
+            },
+          }
+        : {}),
       "Event Id": {
         rich_text: [
           {
@@ -90,7 +98,7 @@ class NotionAPI {
 
   formatEvent(event: PageObjectResponse | PartialPageObjectResponse): EventWithPageId | undefined {
     if (!("properties" in event)) return;
-    const id = event.properties["Event Id"].type === "rich_text" ? event.properties["Event Id"].rich_text[0].plain_text : "";
+    const id = event.properties["Event Id"].type === "rich_text" ? event.properties["Event Id"].rich_text[0]?.plain_text ?? "" : "";
     const pageId = event.id;
     const start = event.properties["Date"].type === "date" ? event.properties["Date"].date?.start ?? "" : "";
     const end = event.properties["Date"].type === "date" ? event.properties["Date"].date?.end ?? "" : "";
@@ -107,15 +115,34 @@ class NotionAPI {
     };
   }
 
+  async getExistingEventById(id: string) {
+    const { results } = await this.client.databases.query({
+      database_id: this.databaseId,
+      filter: {
+        property: "Event Id",
+        rich_text: {
+          equals: id,
+        },
+      },
+    });
+
+    if (results.length === 0) return null;
+    return this.formatEvent(results[0]);
+  }
+
   async getExistingEvents() {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
       sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
       filter: {
-        property: "Event Id",
-        rich_text: {
-          is_not_empty: true,
-        },
+        and: [
+          {
+            property: "Date",
+            date: {
+              is_not_empty: true,
+            },
+          },
+        ],
       },
     });
 
