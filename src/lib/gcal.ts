@@ -23,6 +23,7 @@ class GCalAPI {
     const id = event.id || "";
     const start = event.start?.dateTime || event.start?.date || "";
     const end = event.end?.dateTime || event.end?.date || "";
+    const deleted = event.status === "cancelled";
     const preTitle = event.summary || "";
 
     const { tag, title } = parseTag(preTitle);
@@ -33,6 +34,7 @@ class GCalAPI {
       tag,
       start,
       end,
+      deleted,
     };
   }
 

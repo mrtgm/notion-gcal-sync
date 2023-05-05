@@ -9,6 +9,7 @@ type Event = {
   tag?: string | null;
   start: string;
   end: string;
+  deleted?: boolean;
   notionPageId?: string | null;
 };
 

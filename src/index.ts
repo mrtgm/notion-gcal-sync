@@ -14,6 +14,7 @@ import { Client } from "@notionhq/client";
 import NotionAPI from "./lib/notion";
 import GCalAPI from "./lib/gcal";
 import { ExistingEvents, Event } from "./type";
+import { resolveDiff, resolveDiffs } from "./lib/util";
 
 type Bindings = {
   google_email: string;
@@ -41,9 +42,9 @@ app.get("/google-calendar/watch", async (c) => {
         Authorization: `Bearer ${res.data}`,
       },
       body: JSON.stringify({
-        id: "hono",
+        id: "notion-sync",
         type: "web_hook",
-        address: "https://less-heater-suddenly-ge.trycloudflare.com/google-calendar/webhook",
+        address: "https://remove-hobby-combining-willing.trycloudflare.com/google-calendar/webhook",
       }),
     });
     return c.json({
@@ -66,9 +67,32 @@ app.post("/google-calendar/webhook", async (c) => {
   const events = await gcal.getExistingEvents(token);
   if (!events.items || events.items.length === 0) return;
 
-  // 削除 or 更新
   const nextSyncToken = events.nextSyncToken;
   if (nextSyncToken) c.env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
+
+  const existingNotionEvent = (await notion.getExistingEvents())[0];
+  const existingGCalEvent = events.items[0];
+
+  const { isDeleted, isUpdated, isNew } = resolveDiff({
+    notionEvent: existingNotionEvent,
+    gcalEvent: existingGCalEvent,
+  });
+
+  if (isDeleted) {
+    await notion.deleteEvent(existingNotionEvent);
+  }
+
+  if (isUpdated) {
+    const updatedEvent = {
+      ...existingNotionEvent,
+      ...existingGCalEvent,
+    };
+    await notion.updateEvent(updatedEvent);
+  }
+
+  if (isNew) {
+    await notion.createEvent(existingGCalEvent);
+  }
 
   return c.json({
     success: true,
@@ -76,51 +100,8 @@ app.post("/google-calendar/webhook", async (c) => {
   });
 });
 
-const resolveDiff = ({
-  notionEvents,
-  gcalEvents,
-}: {
-  notionEvents: {
-    id: string;
-    eventId: string;
-  }[];
-  gcalEvents: calendar_v3.Schema$Events;
-}) => {
-  // Google Calendar に存在するが Notion に存在しないイベント
-  const newEvents = gcalEvents.items?.filter((event) => {
-    if (!event.id) return false;
-    return !notionEvents.some((v) => v?.eventId === event.id);
-  });
-
-  // Google Calendar に存在するが Notion に存在しないイベント
-  const deletedEvents = notionEvents.filter((v) => {
-    return !gcalEvents.items?.some((event) => event?.id === v?.eventId);
-  });
-
-  // Notion に存在するが Google Calendar に存在しないイベント
-  const updatedEvents = gcalEvents.items?.reduce((acc, event) => {
-    if (!event.id) return [];
-    const index = notionEvents.findIndex((v) => v?.eventId === event.id);
-    if (index < 0) return acc;
-
-    return [
-      ...acc,
-      {
-        ...event,
-        pageId: notionEvents[index]?.id,
-      },
-    ];
-  }, [] as ExistingEvents[]);
-
-  return {
-    newEvents,
-    deletedEvents,
-    updatedEvents,
-  };
-};
-
+// TODO: POST に変更
 app.get("/", async (c) => {
-  // TODO: POST に変更
   const notion = new NotionAPI(c.env.notion_token, c.env.notion_database_id);
   const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
 
@@ -133,32 +114,10 @@ app.get("/", async (c) => {
 
   const existingNotionEvents = await notion.getExistingEvents();
 
-  // Google Calendar に存在するが Notion に存在しないイベント
-  const newEvents = events.items.filter((event) => {
-    if (!event.id) return false;
-    return !existingNotionEvents.some((v) => v?.id === event.id);
+  const { newEvents, deletedEvents, updatedEvents } = resolveDiffs({
+    notionEvents: existingNotionEvents,
+    gcalEvents: events.items,
   });
-
-  // Notion に存在するが Google Calendar に存在しないイベント
-  const deletedEvents = existingNotionEvents.filter((v) => {
-    if (!events.items || events.items.length === 0) return [];
-    return !events.items.some((event) => event?.id === v?.id);
-  });
-
-  // Google Calendar に存在し、Notion にも存在するイベント
-  const updatedEvents = events.items.reduce((acc, event) => {
-    if (!event.id) return [];
-    const index = existingNotionEvents.findIndex((v) => v?.id === event.id);
-    if (index < 0) return acc;
-
-    return [
-      ...acc,
-      {
-        ...event,
-        pageId: existingNotionEvents[index]?.notionPageId,
-      },
-    ];
-  }, [] as Event[]);
 
   if (deletedEvents.length) {
     await notion.deleteEvents(deletedEvents);
