@@ -37,9 +37,9 @@ app.get("/google-calendar/watch", async (c) => {
         Authorization: `Bearer ${res.data}`,
       },
       body: JSON.stringify({
-        id: "notion-sync-worker",
+        id: "notion-sync-workers",
         type: "web_hook",
-        address: "https://occasionally-celebration-kentucky-junior.trycloudflare.com/google-calendar/webhook",
+        address: "https://notion-sync.morio.workers.dev/google-calendar/webhook",
       }),
     });
     return c.json({
@@ -55,10 +55,6 @@ app.get("/google-calendar/watch", async (c) => {
 });
 
 app.post("/google-calendar/webhook", async (c) => {
-  const notion = new NotionAPI(c.env.notion_token, c.env.notion_database_id);
-  const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
-  const token = await c.env.GOOGLE_SYNC_TOKEN.get("syncToken");
-
   const lastSync = await c.env.LAST_SYNC.get("lastSync");
   const elapsed = Date.now() - Number(lastSync);
   if (elapsed < Config.RATE_LIMIT_MS) {
@@ -68,6 +64,10 @@ app.post("/google-calendar/webhook", async (c) => {
       message: "rate limit",
     });
   }
+
+  const notion = new NotionAPI(c.env.notion_token, c.env.notion_database_id);
+  const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
+  const token = await c.env.GOOGLE_SYNC_TOKEN.get("syncToken");
 
   const events = await gcal.getExistingEvents(token);
   if (!events.items || events.items.length === 0) return c.status(404);
@@ -153,11 +153,9 @@ const watchNotion = async (env: Bindings) => {
   const lastSync = await env.LAST_SYNC.get("lastSync");
   const elapsed = Date.now() - Number(lastSync);
   if (elapsed < Config.RATE_LIMIT_MS) {
-    console.error("rate limit");
+    console.error("WatchNotion: rate limit");
     return;
   }
-  await env.LAST_SYNC.put("lastSync", Date.now().toString());
-
   const events = await notion.getExistingEvents();
 
   if (!events || events.length === 0) return console.log("WatchNotion: no events");
@@ -174,6 +172,8 @@ const watchNotion = async (env: Bindings) => {
   const isUpdated = updatedEvents.length > 0;
   const isNew = newEvents.length > 0;
 
+  await env.LAST_SYNC.put("lastSync", Date.now().toString());
+
   try {
     if (isDeleted) {
       await gcal.deleteEvents(deletedEvents);
@@ -182,7 +182,8 @@ const watchNotion = async (env: Bindings) => {
       await gcal.updateEvents(updatedEvents);
     }
     if (isNew) {
-      await gcal.createEvents(newEvents);
+      const events = await gcal.createEvents(newEvents);
+      await notion.updateEvents(events);
     }
   } catch (e) {
     console.error(e);

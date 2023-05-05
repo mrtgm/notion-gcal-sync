@@ -2,7 +2,7 @@
 
 import { calendar_v3 } from "@googleapis/calendar";
 import { getGoogleAuthToken } from "./auth";
-import { Event } from "../type";
+import { Event, EventWithPageId } from "../type";
 import { parseTag } from "./util";
 
 class GCalAPI {
@@ -95,10 +95,10 @@ class GCalAPI {
     console.log("Google Calendar: deleted events");
   }
 
-  async createEvents(events: Event[]) {
-    const promises = events.map((event) => {
+  async createEvents(events: EventWithPageId[]) {
+    const promises = events.map(async (event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events`;
-      return fetch(url, {
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,9 +114,14 @@ class GCalAPI {
           },
         }),
       });
+      const json = (await res.json()) as calendar_v3.Schema$Event;
+      return json;
     });
-    await Promise.all(promises);
+    const res = await Promise.all(promises);
     console.log("Google Calendar: created events");
+    return res.map((event, i) => {
+      return { ...this.formatEvent(event), pageId: events[i].pageId };
+    });
   }
 
   async updateEvents(events: Event[]) {
