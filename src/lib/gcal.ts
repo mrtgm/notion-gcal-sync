@@ -1,15 +1,14 @@
 // CRUD
 
-import { calendar_v3 } from "@googleapis/calendar";
-import { getGoogleAuthToken } from "./auth";
-import { Event, EventWithPageId } from "../type";
-import { parseTag } from "./util";
+import { calendar_v3 } from '@googleapis/calendar';
+import { getGoogleAuthToken } from './auth';
+import { Event } from '../type';
+import { normDate, parseTag } from './util';
 
 class GCalAPI {
-  scope = "https://www.googleapis.com/auth/calendar";
-  baseUrl = "https://www.googleapis.com/calendar/v3/calendars";
-
-  _accessToken = "";
+  scope = 'https://www.googleapis.com/auth/calendar';
+  baseUrl = 'https://www.googleapis.com/calendar/v3/calendars';
+  _accessToken = '';
 
   constructor(private email: string, private privateKey: string, private calendarId: string) {}
 
@@ -20,11 +19,13 @@ class GCalAPI {
   }
 
   private formatEvent(event: calendar_v3.Schema$Event): Event {
-    const id = event.id || "";
-    const start = event.start?.dateTime || event.start?.date || "";
-    const end = event.end?.dateTime || event.end?.date || "";
-    const deleted = event.status === "cancelled";
-    const preTitle = event.summary || "";
+    const id = event.id || '';
+    const start = normDate(event.start?.dateTime || event.start?.date || '');
+    const end = normDate(event.end?.dateTime || event.end?.date || '');
+    const deleted = event.status === 'cancelled';
+    const lastEdited = event.updated || '';
+    const preTitle = event.summary || '';
+    const pageId = event.extendedProperties?.private?.pageId || '';
 
     const { tag, title } = parseTag(preTitle);
 
@@ -35,6 +36,8 @@ class GCalAPI {
       start,
       end,
       deleted,
+      pageId,
+      lastEdited,
     };
   }
 
@@ -43,31 +46,25 @@ class GCalAPI {
     if (res.success) {
       this._accessToken = res.data;
     } else {
-      console.log("error", res.error);
+      console.log('error', res.error);
     }
   }
 
-  async getExistingEvents(syncToken?: string | null | undefined) {
+  async getExistingEvents() {
     const query: calendar_v3.Params$Resource$Events$List = {
-      timeMin: new Date().toISOString(),
       timeMax: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       singleEvents: true,
-      maxResults: 100, // Notion は1度に100件以上のページを取得できないため、100件で Limit
+      orderBy: 'startTime',
+      maxResults: 100,
     };
-
-    if (syncToken) {
-      query.syncToken = syncToken;
-      delete query.timeMin;
-      delete query.timeMax;
-    }
 
     const qs = new URLSearchParams(query as any).toString();
     const url = `${this.baseUrl}/${this.calendarId}/events?${qs}`;
 
     const response = await fetch(url, {
-      method: "GET",
+      method: 'GET',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${this._accessToken}`,
       },
     });
@@ -75,7 +72,7 @@ class GCalAPI {
     const res: calendar_v3.Schema$Events = await response?.json();
 
     return {
-      items: res.items?.map((event) => this.formatEvent(event)),
+      items: res.items?.map((event) => this.formatEvent(event)) || [],
       nextSyncToken: res.nextSyncToken,
     };
   }
@@ -84,24 +81,24 @@ class GCalAPI {
     const promises = events.map((event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
       return fetch(url, {
-        method: "DELETE",
+        method: 'DELETE',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${this._accessToken}`,
         },
       });
     });
     await Promise.all(promises);
-    console.log("Google Calendar: deleted events");
+    console.log('Google Calendar: Deleted events');
   }
 
-  async createEvents(events: EventWithPageId[]) {
+  async createEvents(events: Event[]) {
     const promises = events.map(async (event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events`;
       const res = await fetch(url, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${this._accessToken}`,
         },
         body: JSON.stringify({
@@ -111,6 +108,11 @@ class GCalAPI {
           },
           end: {
             dateTime: event.end,
+          },
+          extendedProperties: {
+            private: {
+              pageId: event.pageId,
+            },
           },
         }),
       });
@@ -118,9 +120,9 @@ class GCalAPI {
       return json;
     });
     const res = await Promise.all(promises);
-    console.log("Google Calendar: created events");
+    console.log('Google Calendar: Created events');
     return res.map((event, i) => {
-      return { ...this.formatEvent(event), pageId: events[i].pageId };
+      return { ...this.formatEvent(event), pageId: events[i].pageId, lastEdited: events[i].lastEdited };
     });
   }
 
@@ -128,9 +130,9 @@ class GCalAPI {
     const promises = events.map((event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
       return fetch(url, {
-        method: "PUT",
+        method: 'PUT',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${this._accessToken}`,
         },
         body: JSON.stringify({
@@ -141,11 +143,16 @@ class GCalAPI {
           end: {
             dateTime: event.end,
           },
+          extendedProperties: {
+            private: {
+              pageId: event.pageId,
+            },
+          },
         }),
       });
     });
     await Promise.all(promises);
-    console.log("Google Calendar: updated events");
+    console.log('Google Calendar: Updated events');
   }
 }
 

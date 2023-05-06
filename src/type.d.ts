@@ -10,7 +10,8 @@ type Event = {
   start: string;
   end: string;
   deleted?: boolean;
-  notionPageId?: string | null;
+  pageId?: string;
+  lastEdited: string;
 };
 
 interface ExistingEvents extends calendar_v3.Schema$Event {

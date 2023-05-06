@@ -1,11 +1,16 @@
-import { Client } from "@notionhq/client";
-import { nonNullable, parseTag } from "./util";
-import { ExistingEvents, Event, EventWithPageId } from "../type";
-import { PageObjectResponse, PartialPageObjectResponse, UpdatePageParameters, CreatePageParameters } from "@notionhq/client/build/src/api-endpoints";
+import { Client } from '@notionhq/client';
+import { nonNullable, normDate, parseTag } from './util';
+import { Event } from '../type';
+import {
+  PageObjectResponse,
+  PartialPageObjectResponse,
+  UpdatePageParameters,
+  CreatePageParameters,
+} from '@notionhq/client/build/src/api-endpoints';
 
-const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
+const buildUpdateOption = (event: Event): UpdatePageParameters => {
   return {
-    page_id: event.pageId,
+    page_id: event.pageId ?? '',
     properties: {
       Name: {
         title: [
@@ -26,7 +31,7 @@ const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
             },
           }
         : {}),
-      "Event Id": {
+      'Event Id': {
         rich_text: [
           {
             text: {
@@ -39,7 +44,11 @@ const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
   };
 };
 
-const buildCreateOption = (event: Event, parent: PartialPageObjectResponse | null, databaseId: string): CreatePageParameters => {
+const buildCreateOption = (
+  event: Event,
+  parent: PartialPageObjectResponse | null,
+  databaseId: string
+): CreatePageParameters => {
   return {
     parent: { database_id: databaseId },
     properties: {
@@ -62,7 +71,7 @@ const buildCreateOption = (event: Event, parent: PartialPageObjectResponse | nul
             },
           }
         : {}),
-      "Event Id": {
+      'Event Id': {
         rich_text: [
           {
             text: {
@@ -71,7 +80,7 @@ const buildCreateOption = (event: Event, parent: PartialPageObjectResponse | nul
           },
         ],
       },
-      "Parent Item": {
+      'Parent Item': {
         relation: parent
           ? [
               {
@@ -95,13 +104,17 @@ class NotionAPI {
     this.databaseId = databaseId;
   }
 
-  formatEvent(event: PageObjectResponse | PartialPageObjectResponse): EventWithPageId | undefined {
-    if (!("properties" in event)) return;
-    const id = event.properties["Event Id"].type === "rich_text" ? event.properties["Event Id"].rich_text[0]?.plain_text ?? "" : "";
+  formatEvent(event: PageObjectResponse | PartialPageObjectResponse): Event | undefined {
+    if (!('properties' in event)) return;
+    const id =
+      event.properties['Event Id'].type === 'rich_text'
+        ? event.properties['Event Id'].rich_text[0]?.plain_text ?? ''
+        : '';
     const pageId = event.id;
-    const start = event.properties["Date"].type === "date" ? event.properties["Date"].date?.start ?? "" : "";
-    const end = event.properties["Date"].type === "date" ? event.properties["Date"].date?.end ?? "" : "";
-    const preTitle = event.properties["Name"].type === "title" ? event.properties["Name"].title[0].plain_text : "";
+    const start = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.start ?? '' : '');
+    const end = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.end ?? '' : '');
+    const preTitle = event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : '';
+    const lastEdited = event.last_edited_time;
     const { tag, title } = parseTag(preTitle);
 
     return {
@@ -111,6 +124,7 @@ class NotionAPI {
       start,
       end,
       pageId,
+      lastEdited,
     };
   }
 
@@ -118,7 +132,7 @@ class NotionAPI {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
       filter: {
-        property: "Event Id",
+        property: 'Event Id',
         rich_text: {
           equals: id,
         },
@@ -132,13 +146,19 @@ class NotionAPI {
   async getExistingEvents() {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
-      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+      sorts: [
+        {
+          property: 'Date',
+          direction: 'ascending',
+        },
+      ],
+      page_size: 100,
       filter: {
         and: [
           {
-            property: "Date",
+            property: 'Date',
             date: {
-              is_not_empty: true,
+              before: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             },
           },
         ],
@@ -155,7 +175,7 @@ class NotionAPI {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
       filter: {
-        property: "Tag",
+        property: 'Tag',
         rich_text: {
           equals: tag,
         },
@@ -166,35 +186,36 @@ class NotionAPI {
     return results[0];
   }
 
-  async deleteEvent(event: EventWithPageId) {
+  async deleteEvent(event: Event) {
+    if (!event?.pageId) return;
     await this.client.pages.update({
       page_id: event.pageId,
       archived: true,
     });
-    console.log(`Delete Notion Event: ${event.id}`);
+    console.log('Notion: Deleted Event');
   }
 
-  async deleteEvents(events: EventWithPageId[]) {
+  async deleteEvents(events: Event[]) {
     await Promise.all(
-      events.map(async (data) => {
-        const pageId = data?.pageId || "";
+      events.map(async (event) => {
+        if (!event?.pageId) return;
         const response = await this.client.pages.update({
-          page_id: pageId,
+          page_id: event.pageId,
           archived: true,
         });
         return response;
       })
     );
-    console.log(`Delete Notion Events: ${events.map((v) => v?.id).join(",")}`);
+    console.log('Notion: Deleted Events');
   }
 
-  async updateEvent(event: EventWithPageId) {
-    if (!event?.pageId) return;
+  async updateEvent(event: Event) {
+    if (!event?.id) return;
     await this.client.pages.update(buildUpdateOption(event));
-    console.log(`Updated Notion Event: ${event.id}`);
+    console.log('Notion: Updated Event');
   }
 
-  async updateEvents(events: EventWithPageId[]) {
+  async updateEvents(events: Event[]) {
     await Promise.all(
       events.map(async (event) => {
         if (!event?.pageId) return;
@@ -202,25 +223,24 @@ class NotionAPI {
         return response;
       })
     );
-    console.log(`Updated Notion Events: ${events.map((v) => v.id).join(",")}`);
+    console.log('Notion: Updated Events');
   }
 
   async createEvent(event: Event) {
     const parent = await this.getParentTaskFromTag(event?.tag);
     await this.client.pages.create(buildCreateOption(event, parent, this.databaseId));
-    console.log(`Created Notion Event: ${event.id}`);
+    console.log('Notion: Created Event');
   }
 
   async createEvents(events: Event[]) {
     await Promise.all(
       events.map(async (data) => {
         const parent = await this.getParentTaskFromTag(data?.tag);
-
         const response = await this.client.pages.create(buildCreateOption(data, parent, this.databaseId));
         return response;
       })
     );
-    console.log(`Created Notion Events: ${events.map((v) => v.id).join(",")}`);
+    console.log('Notion: Created Events');
   }
 }
 
