@@ -12,8 +12,6 @@ type Bindings = {
   notion_database_id: string;
   GOOGLE_SYNC_TOKEN: KVNamespace;
   NOTION_CACHE: KVNamespace;
-  GCAL_CACHE: KVNamespace;
-  LAST_SYNC: KVNamespace;
 };
 
 const app = new Hono<{
@@ -135,11 +133,6 @@ const watchNotion = async (env: Bindings) => {
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const syncing = await env.LAST_SYNC.get('lastSync');
-  if (syncing === 'true') {
-    console.error('Notion 👉 GCal: Operation Locked');
-    return;
-  }
   const events = await notion.getExistingEvents();
   console.log('Notion 👉 GCal: Incoming Events', events);
 
@@ -191,8 +184,6 @@ const watchNotion = async (env: Bindings) => {
   const isUpdated = updatedEvents.length > 0;
   const isNew = newEvents.length > 0;
 
-  await env.LAST_SYNC.put('lastSync', 'true');
-
   try {
     if (isDeleted) {
       await gcal.deleteEvents(deletedEvents);
@@ -208,8 +199,6 @@ const watchNotion = async (env: Bindings) => {
     console.error('Notion 👉 GCal: Failed!!!', e);
     return;
   }
-
-  await env.LAST_SYNC.put('lastSync', 'false');
 
   return console.log('------ Synced successfully ------');
 };
