@@ -1,8 +1,11 @@
 import { Event } from '../type';
 
+/**
+ * Type guard for non-nullable value
+ * @param value
+ * @returns {boolean}
+ */
 export const nonNullable = <T>(value: T): value is NonNullable<T> => value != null;
-
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const toLocaleIsoString = (date: any) => {
   if (!(date instanceof Date)) {
@@ -27,12 +30,23 @@ const toLocaleIsoString = (date: any) => {
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}${timezone}`;
 };
 
+/**
+ * Normalize date string to ISO 8601 format
+ * @param str {string} Date string to normalize
+ * @returns {string} ISO 8601 formatted date string
+ */
 export const normDate = (str: string) => {
   if (!str) return '';
   const date = new Date(str);
   return date.toISOString();
 };
 
+/**
+ * Separate tag from title. Tag is enclosed in square brackets.
+ * @example parseTag('[tag] title') // { tag: 'tag', title: 'title' }
+ * @param str {string} String to parse
+ * @returns {tag: string, title: string}
+ */
 export const parseTag = (str: string) => {
   const regex = /\[(.+?)\]/gi;
   const match = regex.exec(str);

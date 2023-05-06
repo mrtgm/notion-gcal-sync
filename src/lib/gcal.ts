@@ -12,12 +12,24 @@ class GCalAPI {
 
   constructor(private email: string, private privateKey: string, private calendarId: string) {}
 
+  /**
+   * Initialize Google Calendar API
+   * @param email
+   * @param privateKey
+   * @param calendarId
+   * @returns GCalAPI instance
+   */
   static async init(email: string, privateKey: string, calendarId: string) {
     const gcal = new GCalAPI(email, privateKey, calendarId);
     await gcal.getAccessToken();
     return gcal;
   }
 
+  /**
+   * Format raw event data from Google Calendar API
+   * @param event calendar_v3.Schema$Event Raw event data from Google Calendar API
+   * @returns
+   */
   private formatEvent(event: calendar_v3.Schema$Event): Event {
     const id = event.id || '';
     const start = normDate(event.start?.dateTime || event.start?.date || '');
@@ -37,6 +49,10 @@ class GCalAPI {
     };
   }
 
+  /**
+   * Fetch access token from Google OAuth2
+   * @returns Promise<void>
+   */
   async getAccessToken() {
     const res = await getGoogleAuthToken(this.email, this.privateKey, this.scope);
     if (res.success) {
@@ -46,6 +62,10 @@ class GCalAPI {
     }
   }
 
+  /**
+   * Fetch 100 events within the next 7 days from Google Calendar, with the earliest date first.
+   * @returns Event[]
+   */
   async getExistingEvents() {
     const query: calendar_v3.Params$Resource$Events$List = {
       timeMax: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -69,6 +89,10 @@ class GCalAPI {
     return items?.map((event) => this.formatEvent(event)) || [];
   }
 
+  /**
+   * Delete events on Google Calendar
+   * @param events Events to be deleted
+   */
   async deleteEvents(events: Event[]) {
     const promises = events.map((event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
@@ -81,9 +105,14 @@ class GCalAPI {
       });
     });
     await Promise.all(promises);
-    console.log('Google Calendar: Deleted events Finished');
+    console.log('Google Calendar: Deletion Finished');
   }
 
+  /**
+   * Create events on Google Calendar
+   * @param events Events to be created
+   * @returns Event[] Created events
+   */
   async createEvents(events: Event[]) {
     const promises = events.map(async (event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events`;
@@ -112,10 +141,14 @@ class GCalAPI {
       return json;
     });
     const res = await Promise.all(promises);
-    console.log('Google Calendar: Created events Finished');
+    console.log('Google Calendar: Creation Finished');
     return res.map((event, i) => this.formatEvent(event));
   }
 
+  /**
+   * Update events on Google Calendar
+   * @param events Events to be updated
+   */
   async updateEvents(events: Event[]) {
     const promises = events.map((event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
@@ -142,7 +175,7 @@ class GCalAPI {
       });
     });
     await Promise.all(promises);
-    console.log('Google Calendar: Updated events Finished');
+    console.log('Google Calendar: Update Finished');
   }
 }
 

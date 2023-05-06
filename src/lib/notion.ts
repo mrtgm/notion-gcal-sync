@@ -1,12 +1,7 @@
 import { Client } from '@notionhq/client';
 import { nonNullable, normDate, parseTag } from './util';
 import { Event } from '../type';
-import {
-  PageObjectResponse,
-  PartialPageObjectResponse,
-  UpdatePageParameters,
-  CreatePageParameters,
-} from '@notionhq/client/build/src/api-endpoints';
+import { PageObjectResponse, PartialPageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 
 class NotionAPI {
   client: Client;
@@ -19,6 +14,11 @@ class NotionAPI {
     this.databaseId = databaseId;
   }
 
+  /**
+   * Format event data from Notion API response
+   * @param event {PageObjectResponse | PartialPageObjectResponse} Raw event data from Notion API
+   * @returns Event | undefined
+   */
   formatEvent(event: PageObjectResponse | PartialPageObjectResponse): Event | undefined {
     if (!('properties' in event)) return;
     const id =
@@ -41,6 +41,10 @@ class NotionAPI {
     };
   }
 
+  /**
+   * Fetch 100 events within the next 7 days from Notion, with the earliest date first.
+   * @returns Event[]
+   */
   async getExistingEvents() {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
@@ -67,7 +71,12 @@ class NotionAPI {
     return existingEvents.filter(nonNullable);
   }
 
-  async getParentTaskFromTag(tag: string | undefined | null) {
+  /**
+   * Find a task with a specific tag
+   * @param tag {string | undefined | null} Tag to filter by
+   * @returns Event | null
+   */
+  async getTaggedTask(tag: string | undefined | null) {
     if (!tag) return null;
 
     const { results } = await this.client.databases.query({
@@ -84,6 +93,10 @@ class NotionAPI {
     return results[0];
   }
 
+  /**
+   * Delete events from Notion
+   * @param events {Event[]} Events to delete
+   */
   async deleteEvents(events: Event[]) {
     await Promise.all(
       events.map(async (event) => {
@@ -95,9 +108,13 @@ class NotionAPI {
         return response;
       })
     );
-    console.log('Notion: Deleted Events Finished');
+    console.log('Notion: Deletion Finished');
   }
 
+  /**
+   * Update events in Notion
+   * @param events {Event[]} Events to update
+   */
   async updateEvents(events: Event[]) {
     await Promise.all(
       events.map(async (event) => {
@@ -138,13 +155,18 @@ class NotionAPI {
         return response;
       })
     );
-    console.log('Notion: Updated Events Finished');
+    console.log('Notion: Update Finished');
   }
 
+  /**
+   * Create events in Notion
+   * @param events {Event[]} Events to create
+   * @returns Event[] Created events
+   */
   async createEvents(events: Event[]) {
     const res = await Promise.all(
       events.map(async (event) => {
-        const parent = await this.getParentTaskFromTag(event?.tag);
+        const parent = await this.getTaggedTask(event?.tag);
         const response = await this.client.pages.create({
           parent: { database_id: this.databaseId },
           properties: {
@@ -190,7 +212,7 @@ class NotionAPI {
         return response;
       })
     );
-    console.log('Notion: Created Events Finished');
+    console.log('Notion: Creation Finished');
     return res.map(this.formatEvent).filter(nonNullable);
   }
 }
