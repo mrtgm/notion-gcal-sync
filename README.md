@@ -1,6 +1,7 @@
-# notion-google-calendar-sync
+# notion-gcal-sync
 
-A simple script to sync Notion calendar to Google Calendar run on Cloudflare Workers.
+A simple script to do 2 way-sync between Notion calendar and Google Calendar, run on Cloudflare Workers.
+
 By default, it will sync all events in the next week, and run every minute. You can change the behavior by modifying `wrangler.toml`.
 
 ## Prerequisites
