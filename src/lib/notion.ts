@@ -42,10 +42,10 @@ class NotionAPI {
   }
 
   /**
-   * Fetch 100 events within the next 7 days from Notion, with the earliest date first.
+   * Fetch max 100 events within the next 7 days from Notion, with the earliest date first.
    * @returns Event[]
    */
-  async getExistingEvents() {
+  async getEvents() {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
       sorts: [
@@ -76,7 +76,7 @@ class NotionAPI {
    * @param tag {string | undefined | null} Tag to filter by
    * @returns Event | null
    */
-  async getTaggedTask(tag: string | undefined | null) {
+  async getParentByTag(tag: string | undefined | null) {
     if (!tag) return null;
 
     const { results } = await this.client.databases.query({
@@ -166,7 +166,7 @@ class NotionAPI {
   async createEvents(events: Event[]) {
     const res = await Promise.all(
       events.map(async (event) => {
-        const parent = await this.getTaggedTask(event?.tag);
+        const parent = await this.getParentByTag(event?.tag);
         const response = await this.client.pages.create({
           parent: { database_id: this.databaseId },
           properties: {

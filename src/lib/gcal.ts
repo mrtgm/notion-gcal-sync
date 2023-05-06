@@ -1,5 +1,3 @@
-// CRUD
-
 import { calendar_v3 } from '@googleapis/calendar';
 import { getGoogleAuthToken } from './auth';
 import { Event } from '../type';
@@ -63,7 +61,7 @@ class GCalAPI {
   }
 
   /**
-   * Fetch 100 events within the next 7 days from Google Calendar, with the earliest date first.
+   * Fetch max 100 events within the next 7 days from Google Calendar, with the earliest date first.
    * @returns Event[]
    */
   async getExistingEvents() {

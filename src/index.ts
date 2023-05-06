@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { getGoogleAuthToken } from './lib/auth';
 import NotionAPI from './lib/notion';
 import GCalAPI from './lib/gcal';
 import { Event } from './type';
+import { compareWithCache } from './lib/util';
 
 type Bindings = {
   google_email: string;
@@ -41,7 +41,7 @@ const watchGCal = async (env: Bindings) => {
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const events = await gcal.getExistingEvents();
+  const events = await gcal.getEvents();
   console.log('GCal 👉 Notion: Incoming Events', events);
 
   const sortedEvents = events.sort((a, b) => {
@@ -56,9 +56,6 @@ const watchGCal = async (env: Bindings) => {
   if (!cache) {
     await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('GCal 👉 Notion: Cache Does Not Exist, Created New Cache');
-  } else {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
-    console.log('GCal 👉 Notion: Updated Cache');
   }
 
   if (cache === JSON.stringify(sortedEvents)) {
@@ -66,29 +63,13 @@ const watchGCal = async (env: Bindings) => {
     return console.log('------ End Sync ------');
   }
 
-  const newEvents = sortedEvents.filter((event) => {
-    return !cachedEvents.some((cachedEvent) => cachedEvent.id === event.id);
-  });
+  await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+  console.log('GCal 👉 Notion: Updated Cache');
 
-  const deletedEvents = cachedEvents.filter((cachedEvent) => {
-    return !sortedEvents.some((event) => event.id === cachedEvent.id);
-  });
-
-  const updatedEvents = sortedEvents.filter((event) => {
-    return cachedEvents.some((cachedEvent) => {
-      return (
-        event.id === cachedEvent.id &&
-        (event.title !== cachedEvent.title ||
-          event.tag !== cachedEvent.tag ||
-          event.start !== cachedEvent.start ||
-          event.end !== cachedEvent.end)
-      );
-    });
-  });
-
-  const isDeleted = deletedEvents?.length > 0;
-  const isUpdated = updatedEvents?.length > 0;
-  const isNew = newEvents?.length > 0;
+  const { newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated } = compareWithCache(
+    sortedEvents,
+    cachedEvents
+  );
 
   console.log('GCal 👉 Notion: Diff Found', 'new:', newEvents, 'delete:', deletedEvents, 'update:', updatedEvents);
 
@@ -132,7 +113,7 @@ const watchNotion = async (env: Bindings) => {
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const events = await notion.getExistingEvents();
+  const events = await notion.getEvents();
   console.log('Notion 👉 GCal: Incoming Events', events);
 
   const sortedEvents = events.sort((a, b) => {
@@ -147,9 +128,6 @@ const watchNotion = async (env: Bindings) => {
   if (!cache) {
     await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('Notion 👉 GCal: Cache Does Not Exist, Created New Cache');
-  } else {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
-    console.log('Notion 👉 GCal: Updated Cache');
   }
 
   if (cache === JSON.stringify(sortedEvents)) {
@@ -157,31 +135,15 @@ const watchNotion = async (env: Bindings) => {
     return console.log('------ End Sync ------');
   }
 
-  const newEvents = sortedEvents.filter((event) => {
-    return !cachedEvents.find((cachedEvent) => cachedEvent.id === event.id);
-  });
+  await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+  console.log('Notion 👉 GCal: Updated Cache');
 
-  const deletedEvents = cachedEvents.filter((cachedEvent) => {
-    return !sortedEvents.find((event) => event.id === cachedEvent.id);
-  });
-
-  const updatedEvents = sortedEvents.filter((event) => {
-    return cachedEvents.some((cachedEvent) => {
-      return (
-        event.id === cachedEvent.id &&
-        (event.title !== cachedEvent.title ||
-          event.tag !== cachedEvent.tag ||
-          event.start !== cachedEvent.start ||
-          event.end !== cachedEvent.end)
-      );
-    });
-  });
+  const { newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated } = compareWithCache(
+    sortedEvents,
+    cachedEvents
+  );
 
   console.log('Notion 👉 GCal: Diff Found', 'new:', newEvents, 'delete:', deletedEvents, 'update:', updatedEvents);
-
-  const isDeleted = deletedEvents.length > 0;
-  const isUpdated = updatedEvents.length > 0;
-  const isNew = newEvents.length > 0;
 
   try {
     if (isDeleted) {
