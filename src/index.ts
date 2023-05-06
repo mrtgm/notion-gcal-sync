@@ -1,9 +1,7 @@
 import { Hono } from 'hono';
 import { getGoogleAuthToken } from './lib/auth';
 import NotionAPI from './lib/notion';
-import Config from './config';
 import GCalAPI from './lib/gcal';
-import { resolveDiffsFromGCal, resolveDiffFromGCal, resolveDiffsFromNotion, sleep } from './lib/util';
 import { Event } from './type';
 
 type Bindings = {
