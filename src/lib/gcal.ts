@@ -65,12 +65,8 @@ class GCalAPI {
       },
     });
 
-    const res: calendar_v3.Schema$Events = await response?.json();
-
-    return {
-      items: res.items?.map((event) => this.formatEvent(event)) || [],
-      nextSyncToken: res.nextSyncToken,
-    };
+    const { items }: calendar_v3.Schema$Events = await response?.json();
+    return items?.map((event) => this.formatEvent(event)) || [];
   }
 
   async deleteEvents(events: Event[]) {
@@ -85,7 +81,7 @@ class GCalAPI {
       });
     });
     await Promise.all(promises);
-    console.log('Google Calendar: Deleted events');
+    console.log('Google Calendar: Deleted events Finished');
   }
 
   async createEvents(events: Event[]) {
@@ -116,7 +112,7 @@ class GCalAPI {
       return json;
     });
     const res = await Promise.all(promises);
-    console.log('Google Calendar: Created events');
+    console.log('Google Calendar: Created events Finished');
     return res.map((event, i) => this.formatEvent(event));
   }
 
@@ -146,7 +142,7 @@ class GCalAPI {
       });
     });
     await Promise.all(promises);
-    console.log('Google Calendar: Updated events');
+    console.log('Google Calendar: Updated events Finished');
   }
 }
 

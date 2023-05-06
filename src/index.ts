@@ -22,37 +22,6 @@ app.get('/', async (c) => {
   return c.text('ok');
 });
 
-app.get('/google-calendar/watch', async (c) => {
-  const scope = 'https://www.googleapis.com/auth/calendar';
-  const res = await getGoogleAuthToken(c.env.google_email, c.env.google_private_key, scope);
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${c.env.google_calendar_id}/events/watch`;
-  const id = crypto.randomUUID();
-
-  if (res.success) {
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${res.data}`,
-      },
-      body: JSON.stringify({
-        id: id,
-        type: 'web_hook',
-        address: 'https://contributions-protected-ciao-trying.trycloudflare.com/google-calendar/webhook',
-      }),
-    });
-    return c.json({
-      success: true,
-      message: 'ok',
-    });
-  } else {
-    return c.json({
-      success: false,
-      message: 'failed',
-    });
-  }
-});
-
 const watchGCal = async (env: Bindings) => {
   console.log('------ Start Sync ------\nGCal 👉 Notion', new Date().toLocaleString());
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
@@ -61,7 +30,7 @@ const watchGCal = async (env: Bindings) => {
   const events = await gcal.getExistingEvents();
   console.log('GCal 👉 Notion: Incoming Events', events);
 
-  const sortedEvents = events.items.sort((a, b) => {
+  const sortedEvents = events.sort((a, b) => {
     if (a.start > b.start) return -1;
     else return 1;
   });
@@ -117,7 +86,8 @@ const watchGCal = async (env: Bindings) => {
       await notion.updateEvents(updatedEvents);
     }
     if (isNew) {
-      await notion.createEvents(newEvents);
+      const events = await notion.createEvents(newEvents);
+      await gcal.updateEvents(events); // update pageId
     }
   } catch (e) {
     console.error('GCal 👉 Notion: Failed!!!', e);
@@ -193,7 +163,7 @@ const watchNotion = async (env: Bindings) => {
     }
     if (isNew) {
       const events = await gcal.createEvents(newEvents);
-      await notion.updateEvents(events);
+      await notion.updateEvents(events); // update eventId
     }
   } catch (e) {
     console.error('Notion 👉 GCal: Failed!!!', e);
