@@ -16,6 +16,11 @@ class NotionAPI {
 
   /**
    * Format event data from Notion API response
+   * To work this, you need to set the following properties for Notion database:
+   * - Name: Title
+   * - Date: Date (start and end)
+   * - Event Id: Text
+   *
    * @param event {PageObjectResponse | PartialPageObjectResponse} Raw event data from Notion API
    * @returns Event | undefined
    */

@@ -67,9 +67,9 @@ async function sign(content: string, signingKey: string) {
 
 /**
  * Get Google OAuth2 access token
- * @param user User email
- * @param key Private key in PEM format
- * @param scope Permission scope
+ * @param user Client email of service account
+ * @param key Private key in PEM format of service account
+ * @param scope Permission scope of access token
  * @returns {PromiseResult<string>} Access token
  */
 export const getGoogleAuthToken = async (user: string, key: string, scope: string): PromiseResult<string> => {
