@@ -32,7 +32,7 @@ const toLocaleIsoString = (date: any) => {
 
 /**
  * Normalize date string to ISO 8601 format
- * @param str {string} Date string to normalize
+ * @param str Date string to normalize
  * @returns {string} ISO 8601 formatted date string
  */
 export const normDate = (str: string) => {
@@ -44,7 +44,7 @@ export const normDate = (str: string) => {
 /**
  * Separate tag from title. Tag is enclosed in square brackets.
  * @example parseTag('[tag] title') // { tag: 'tag', title: 'title' }
- * @param str {string} String to parse
+ * @param str String to parse
  * @returns {tag: string, title: string}
  */
 export const parseTag = (str: string) => {
@@ -58,9 +58,9 @@ export const parseTag = (str: string) => {
 
 /**
  * Compare the incoming events with the cached events
- * @param events {Event[]} Incoming events from Google Calendar / Notion
- * @param cachedEvents {Event[]} Cached events from KV
- * @returns {newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated} Events to be created, deleted, updated. And flags to indicate if there are any changes.
+ * @param events  Incoming events from Google Calendar / Notion
+ * @param cachedEvents Cached events from KV
+ * @returns Events to be created, deleted, updated. And flags to indicate if there are any changes.
  */
 export const compareWithCache = (events: Event[], cachedEvents: Event[]) => {
   const newEvents = events.filter((event) => {
