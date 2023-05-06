@@ -1,4 +1,4 @@
-import { calendar_v3 } from "@googleapis/calendar";
+import { calendar_v3 } from '@googleapis/calendar';
 
 type Result<T> = { success: true; data: T } | { success: false; error: string };
 type PromiseResult<T> = Promise<Result<T>>;
@@ -9,9 +9,7 @@ type Event = {
   tag?: string | null;
   start: string;
   end: string;
-  deleted?: boolean;
   pageId?: string;
-  lastEdited: string;
 };
 
 interface ExistingEvents extends calendar_v3.Schema$Event {

@@ -114,7 +114,6 @@ class NotionAPI {
     const start = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.start ?? '' : '');
     const end = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.end ?? '' : '');
     const preTitle = event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : '';
-    const lastEdited = event.last_edited_time;
     const { tag, title } = parseTag(preTitle);
 
     return {
@@ -124,7 +123,6 @@ class NotionAPI {
       start,
       end,
       pageId,
-      lastEdited,
     };
   }
 

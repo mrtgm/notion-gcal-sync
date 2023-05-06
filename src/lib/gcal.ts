@@ -22,8 +22,6 @@ class GCalAPI {
     const id = event.id || '';
     const start = normDate(event.start?.dateTime || event.start?.date || '');
     const end = normDate(event.end?.dateTime || event.end?.date || '');
-    const deleted = event.status === 'cancelled';
-    const lastEdited = event.updated || '';
     const preTitle = event.summary || '';
     const pageId = event.extendedProperties?.private?.pageId || '';
 
@@ -35,9 +33,7 @@ class GCalAPI {
       tag,
       start,
       end,
-      deleted,
       pageId,
-      lastEdited,
     };
   }
 
@@ -121,9 +117,7 @@ class GCalAPI {
     });
     const res = await Promise.all(promises);
     console.log('Google Calendar: Created events');
-    return res.map((event, i) => {
-      return { ...this.formatEvent(event), pageId: events[i].pageId, lastEdited: events[i].lastEdited };
-    });
+    return res.map((event, i) => this.formatEvent(event));
   }
 
   async updateEvents(events: Event[]) {
