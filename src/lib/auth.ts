@@ -1,18 +1,33 @@
 // https://gist.github.com/markelliot/6627143be1fc8209c9662c504d0ff205
 
-import { PromiseResult } from "../type";
+import { PromiseResult } from '../type';
 
+/**
+ * Convert object to base64url
+ * @param object
+ * @returns {string} Base64url String
+ */
 function objectToBase64url(object: object) {
   return arrayBufferToBase64Url(new TextEncoder().encode(JSON.stringify(object)));
 }
 
+/**
+ * Convert ArrayBuffer to base64url
+ * @param buffer {ArrayBuffer}
+ * @returns {string} Base64url String
+ */
 function arrayBufferToBase64Url(buffer: ArrayBuffer) {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)))
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
 }
 
+/**
+ * Convert string to ArrayBuffer
+ * @param str {string}
+ * @returns {ArrayBuffer}
+ */
 function str2ab(str: string) {
   const buf = new ArrayBuffer(str.length);
   const bufView = new Uint8Array(buf);
@@ -22,37 +37,50 @@ function str2ab(str: string) {
   return buf;
 }
 
+/**
+ * Sign content with private key, using RSASSA-PKCS1-V1_5-SIGN from WebCrypto
+ * @param content {string}
+ * @param signingKey {string}
+ * @returns {Promise<string>} Base64url String
+ */
 async function sign(content: string, signingKey: string) {
   const buf = str2ab(content);
 
   const plainKey = signingKey
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\\r\\n|\\n|\\r/gm, "");
+    .replace('-----BEGIN PRIVATE KEY-----', '')
+    .replace('-----END PRIVATE KEY-----', '')
+    .replace(/\\r\\n|\\n|\\r/gm, '');
   const binaryKey = str2ab(atob(plainKey));
   const signer = await crypto.subtle.importKey(
-    "pkcs8",
+    'pkcs8',
     binaryKey,
     {
-      name: "RSASSA-PKCS1-V1_5",
-      hash: { name: "SHA-256" },
+      name: 'RSASSA-PKCS1-V1_5',
+      hash: { name: 'SHA-256' },
     },
     false,
-    ["sign"]
+    ['sign']
   );
-  const binarySignature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-V1_5" }, signer, buf);
+  const binarySignature = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-V1_5' }, signer, buf);
   return arrayBufferToBase64Url(binarySignature);
 }
 
+/**
+ * Get Google OAuth2 access token
+ * @param user Client email of service account
+ * @param key Private key in PEM format of service account
+ * @param scope Permission scope of access token
+ * @returns {PromiseResult<string>} Access token
+ */
 export const getGoogleAuthToken = async (user: string, key: string, scope: string): PromiseResult<string> => {
-  const jwtHeader = objectToBase64url({ alg: "RS256", typ: "JWT" });
+  const jwtHeader = objectToBase64url({ alg: 'RS256', typ: 'JWT' });
   try {
     const assertionTime = Math.round(Date.now() / 1000);
     const expiryTime = assertionTime + 3600;
     const claimSet = objectToBase64url({
       iss: user,
       scope,
-      aud: "https://oauth2.googleapis.com/token",
+      aud: 'https://oauth2.googleapis.com/token',
       exp: expiryTime,
       iat: assertionTime,
     });
@@ -61,12 +89,12 @@ export const getGoogleAuthToken = async (user: string, key: string, scope: strin
     const signature = await sign(jwtUnsigned, key);
     const signedJwt = `${jwtUnsigned}.${signature}`;
     const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${signedJwt}`;
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cache-Control": "no-cache",
-        Host: "oauth2.googleapis.com",
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cache-Control': 'no-cache',
+        Host: 'oauth2.googleapis.com',
       },
       body,
     });
@@ -77,6 +105,6 @@ export const getGoogleAuthToken = async (user: string, key: string, scope: strin
       data: access_token,
     };
   } catch (err) {
-    return { success: false, error: "Invalid Token Error" };
+    return { success: false, error: 'Invalid Token Error' };
   }
 };

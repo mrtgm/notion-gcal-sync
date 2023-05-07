@@ -1,0 +1,5 @@
+notion_token = "xxxxx"
+notion_database_id = "xxxxx"
+google_calendar_id = "xxxxx"
+google_private_key = "xxxxx"
+google_client_email = "xxxxx"

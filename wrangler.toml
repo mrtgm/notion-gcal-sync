@@ -5,8 +5,9 @@ compatibility_date = "2023-05-04"
 kv_namespaces = [
     { binding = "GOOGLE_SYNC_TOKEN", id = "c89ab7d826ca4222a1ba12fd2ac8bf47", preview_id = "01d9f241714148df965fea632f1e1970" },
     { binding = "NOTION_CACHE", id = "6c510ea150ec42948e6e155286000e43", preview_id = "f9edfdca29d24e6c98f600aaf30b65c9" },
-    { binding = "LAST_SYNC", id = "ee67eae4c6d34d6aaf574acf6a31f23d", preview_id = "2e974374b0fb4568bcdf39117b2c6118" }
+    { binding = "LAST_SYNC", id = "ee67eae4c6d34d6aaf574acf6a31f23d", preview_id = "2e974374b0fb4568bcdf39117b2c6118" },
+    { binding = "GCAL_CACHE", id = "942fbd9696444931b45c6710222ad311", preview_id = "193a1cd1739b45c89c2151d090065902" }
 ]
 
 [triggers]
-crons = ["0 0 * * sun","*/1 * * * *"]
+crons = ["*/1 * * * *"]

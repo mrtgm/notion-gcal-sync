@@ -1,88 +1,7 @@
-import { Client } from "@notionhq/client";
-import { nonNullable, parseTag } from "./util";
-import { ExistingEvents, Event, EventWithPageId } from "../type";
-import { PageObjectResponse, PartialPageObjectResponse, UpdatePageParameters, CreatePageParameters } from "@notionhq/client/build/src/api-endpoints";
-
-const buildUpdateOption = (event: EventWithPageId): UpdatePageParameters => {
-  return {
-    page_id: event.pageId,
-    properties: {
-      Name: {
-        title: [
-          {
-            text: {
-              content: event.title,
-            },
-          },
-        ],
-      },
-      ...(event.start && event.end
-        ? {
-            Date: {
-              date: {
-                start: event.start,
-                end: event.end,
-              },
-            },
-          }
-        : {}),
-      "Event Id": {
-        rich_text: [
-          {
-            text: {
-              content: event.id,
-            },
-          },
-        ],
-      },
-    },
-  };
-};
-
-const buildCreateOption = (event: Event, parent: PartialPageObjectResponse | null, databaseId: string): CreatePageParameters => {
-  return {
-    parent: { database_id: databaseId },
-    properties: {
-      Name: {
-        title: [
-          {
-            text: {
-              content: event.title,
-            },
-          },
-        ],
-      },
-      ...(event.start && event.end
-        ? {
-            Date: {
-              date: {
-                start: event.start,
-                end: event.end,
-              },
-            },
-          }
-        : {}),
-      "Event Id": {
-        rich_text: [
-          {
-            text: {
-              content: event.id,
-            },
-          },
-        ],
-      },
-      "Parent Item": {
-        relation: parent
-          ? [
-              {
-                id: parent.id,
-              },
-            ]
-          : [],
-      },
-    },
-  };
-};
+import { Client } from '@notionhq/client';
+import { nonNullable, normDate, normStr, parseTag } from './util';
+import { Event } from '../type';
+import { PageObjectResponse, PartialPageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 
 class NotionAPI {
   client: Client;
@@ -95,14 +14,29 @@ class NotionAPI {
     this.databaseId = databaseId;
   }
 
-  formatEvent(event: PageObjectResponse | PartialPageObjectResponse): EventWithPageId | undefined {
-    if (!("properties" in event)) return;
-    const id = event.properties["Event Id"].type === "rich_text" ? event.properties["Event Id"].rich_text[0]?.plain_text ?? "" : "";
+  /**
+   * Format event data from Notion API response
+   * For this to work, you need to set the following properties for Notion database:
+   * - Name: Title
+   * - Date: Date (start and end)
+   * - Event Id: Text
+   *
+   * @param event {PageObjectResponse | PartialPageObjectResponse} Raw event data from Notion API
+   * @returns Event | undefined
+   */
+  formatEvent(event: PageObjectResponse | PartialPageObjectResponse): Event | undefined {
+    if (!('properties' in event)) return;
+    const id =
+      event.properties['Event Id'].type === 'rich_text'
+        ? event.properties['Event Id'].rich_text[0]?.plain_text ?? ''
+        : '';
     const pageId = event.id;
-    const start = event.properties["Date"].type === "date" ? event.properties["Date"].date?.start ?? "" : "";
-    const end = event.properties["Date"].type === "date" ? event.properties["Date"].date?.end ?? "" : "";
-    const preTitle = event.properties["Name"].type === "title" ? event.properties["Name"].title[0].plain_text : "";
-    const { tag, title } = parseTag(preTitle);
+    const start = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.start ?? '' : '');
+    const end = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.end ?? '' : '');
+    const title = normStr(
+      event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : ''
+    );
+    const tag = normStr(event.properties['Tag'].type === 'select' ? event.properties['Tag'].select?.name ?? '' : '');
 
     return {
       id,
@@ -114,48 +48,47 @@ class NotionAPI {
     };
   }
 
-  async getExistingEventById(id: string) {
+  /**
+   * Fetch max 100 events within the next 7 days from Notion, with the earliest date first.
+   * @returns Event[]
+   */
+  async getEvents() {
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
-      filter: {
-        property: "Event Id",
-        rich_text: {
-          equals: id,
+      sorts: [
+        {
+          property: 'Date',
+          direction: 'ascending',
         },
-      },
-    });
-
-    if (results.length === 0) return null;
-    return this.formatEvent(results[0]);
-  }
-
-  async getExistingEvents() {
-    const { results } = await this.client.databases.query({
-      database_id: this.databaseId,
-      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+      ],
+      page_size: 100,
       filter: {
         and: [
           {
-            property: "Date",
+            property: 'Date',
             date: {
-              is_not_empty: true,
+              before: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             },
           },
         ],
       },
     });
 
-    const existingEvents = results.map(this.formatEvent);
-    return existingEvents.filter(nonNullable);
+    return results.map(this.formatEvent).filter(nonNullable);
   }
 
-  async getParentTaskFromTag(tag: string | undefined | null) {
+  /**
+   * Find a task with a specific tag
+   * @param tag {string | undefined | null} Tag to filter by
+   * @returns Event | null
+   */
+  async getParentByTag(tag: string | undefined | null) {
     if (!tag) return null;
 
     const { results } = await this.client.databases.query({
       database_id: this.databaseId,
       filter: {
-        property: "Tag",
+        property: 'Tag',
         rich_text: {
           equals: tag,
         },
@@ -166,61 +99,151 @@ class NotionAPI {
     return results[0];
   }
 
-  async deleteEvent(event: EventWithPageId) {
-    await this.client.pages.update({
-      page_id: event.pageId,
-      archived: true,
-    });
-    console.log(`Delete Notion Event: ${event.id}`);
-  }
+  /**
+   * Delete events from Notion
+   * @param events {Event[]} Events to delete
+   */
+  async deleteEvents(events: Event[]) {
+    const eventsToDelete = events.filter(
+      (event: Event): event is Omit<Event, 'pageId'> & { pageId: string } => !!event.pageId
+    );
 
-  async deleteEvents(events: EventWithPageId[]) {
+    if (events.length !== eventsToDelete.length) {
+      console.log('Notion: Some events are not deleted because they do not have pageId');
+    }
+
     await Promise.all(
-      events.map(async (data) => {
-        const pageId = data?.pageId || "";
+      eventsToDelete.map(async (event) => {
         const response = await this.client.pages.update({
-          page_id: pageId,
+          page_id: event.pageId,
           archived: true,
         });
         return response;
       })
     );
-    console.log(`Delete Notion Events: ${events.map((v) => v?.id).join(",")}`);
+    console.log('Notion: Deletion Finished');
   }
 
-  async updateEvent(event: EventWithPageId) {
-    if (!event?.pageId) return;
-    await this.client.pages.update(buildUpdateOption(event));
-    console.log(`Updated Notion Event: ${event.id}`);
-  }
+  /**
+   * Update events in Notion
+   * @param events {Event[]} Events to update
+   */
+  async updateEvents(events: Event[]) {
+    const eventsToUpdate = events.filter(
+      (event: Event): event is Omit<Event, 'pageId'> & { pageId: string } => !!event.pageId
+    );
 
-  async updateEvents(events: EventWithPageId[]) {
-    await Promise.all(
-      events.map(async (event) => {
-        if (!event?.pageId) return;
-        const response = await this.client.pages.update(buildUpdateOption(event));
+    if (events.length !== eventsToUpdate.length) {
+      console.log('Notion: Some events are not updated because they do not have pageId');
+    }
+
+    const res = await Promise.all(
+      eventsToUpdate.map(async (event) => {
+        const response = await this.client.pages.update({
+          page_id: event.pageId,
+          properties: {
+            Name: {
+              title: [
+                {
+                  text: {
+                    content: event.title,
+                  },
+                },
+              ],
+            },
+            ...(event.start && event.end
+              ? {
+                  Date: {
+                    date: {
+                      start: event.start,
+                      end: event.end,
+                    },
+                  },
+                }
+              : {}),
+            ...(event.tag
+              ? {
+                  Tag: {
+                    select: {
+                      name: event.tag,
+                    },
+                  },
+                }
+              : {}),
+            'Event Id': {
+              rich_text: [
+                {
+                  text: {
+                    content: event.id,
+                  },
+                },
+              ],
+            },
+          },
+        });
         return response;
       })
     );
-    console.log(`Updated Notion Events: ${events.map((v) => v.id).join(",")}`);
+    const updatedEvents = res.map(this.formatEvent).filter(nonNullable);
+    console.log('Notion: Update Finished', updatedEvents);
   }
 
-  async createEvent(event: Event) {
-    const parent = await this.getParentTaskFromTag(event?.tag);
-    await this.client.pages.create(buildCreateOption(event, parent, this.databaseId));
-    console.log(`Created Notion Event: ${event.id}`);
-  }
-
+  /**
+   * Create events in Notion
+   * @param events {Event[]} Events to create
+   * @returns Event[] Created events
+   */
   async createEvents(events: Event[]) {
-    await Promise.all(
-      events.map(async (data) => {
-        const parent = await this.getParentTaskFromTag(data?.tag);
-
-        const response = await this.client.pages.create(buildCreateOption(data, parent, this.databaseId));
+    const res = await Promise.all(
+      events.map(async (event) => {
+        const response = await this.client.pages.create({
+          parent: { database_id: this.databaseId },
+          properties: {
+            Name: {
+              title: [
+                {
+                  text: {
+                    content: event.title,
+                  },
+                },
+              ],
+            },
+            ...(event.start && event.end
+              ? {
+                  Date: {
+                    date: {
+                      start: event.start,
+                      end: event.end,
+                    },
+                  },
+                }
+              : {}),
+            ...(event.tag
+              ? {
+                  Tag: {
+                    select: {
+                      name: event.tag,
+                    },
+                  },
+                }
+              : {}),
+            'Event Id': {
+              rich_text: [
+                {
+                  text: {
+                    content: event.id,
+                  },
+                },
+              ],
+            },
+          },
+        });
         return response;
       })
     );
-    console.log(`Created Notion Events: ${events.map((v) => v.id).join(",")}`);
+    const createdEvents = res.map(this.formatEvent).filter(nonNullable);
+    console.log('Notion: Creation Finished', createdEvents);
+    return createdEvents;
   }
 }
 

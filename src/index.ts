@@ -1,9 +1,8 @@
-import { Hono } from "hono";
-import { getGoogleAuthToken } from "./lib/auth";
-import NotionAPI from "./lib/notion";
-import Config from "./config";
-import GCalAPI from "./lib/gcal";
-import { resolveDiffsFromGCal, resolveDiffFromGCal, resolveDiffsFromNotion } from "./lib/util";
+import { Hono } from 'hono';
+import NotionAPI from './lib/notion';
+import GCalAPI from './lib/gcal';
+import { Event } from './type';
+import { compareEventsWithCache, sortEvents } from './lib/util';
 
 type Bindings = {
   google_email: string;
@@ -13,119 +12,61 @@ type Bindings = {
   notion_database_id: string;
   GOOGLE_SYNC_TOKEN: KVNamespace;
   NOTION_CACHE: KVNamespace;
-  LAST_SYNC: KVNamespace;
 };
 
 const app = new Hono<{
   Bindings: Bindings;
 }>();
 
-app.get("/", async (c) => {
-  return c.text("ok");
+app.get('/', async (c) => {
+  return c.text('ok');
 });
 
-app.get("/google-calendar/watch", async (c) => {
-  const scope = "https://www.googleapis.com/auth/calendar";
-  const res = await getGoogleAuthToken(c.env.google_email, c.env.google_private_key, scope);
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${c.env.google_calendar_id}/events/watch`;
-
-  if (res.success) {
-    await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${res.data}`,
-      },
-      body: JSON.stringify({
-        id: "notion-sync-workers",
-        type: "web_hook",
-        address: "https://notion-sync.morio.workers.dev/google-calendar/webhook",
-      }),
-    });
-    return c.json({
-      success: true,
-      message: "ok",
-    });
-  } else {
-    return c.json({
-      success: false,
-      message: "failed",
-    });
-  }
-});
-
-app.post("/google-calendar/webhook", async (c) => {
-  const syncing = await c.env.LAST_SYNC.get("lastSync");
-  if (syncing === "true") {
-    c.status(429);
-    return c.json({
-      success: false,
-      message: "Lock",
-    });
-  }
-
-  const notion = new NotionAPI(c.env.notion_token, c.env.notion_database_id);
-  const gcal = await GCalAPI.init(c.env.google_email, c.env.google_private_key, c.env.google_calendar_id);
-  const token = await c.env.GOOGLE_SYNC_TOKEN.get("syncToken");
-
-  const events = await gcal.getExistingEvents(token);
-  if (!events.items || events.items.length === 0) return c.status(404);
-
-  const existingNotionEvent = await notion.getExistingEventById(events.items[0].id);
-  const existingGCalEvent = events.items[0];
-
-  const nextSyncToken = events.nextSyncToken;
-  if (nextSyncToken) c.env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
-
-  const { isDeleted, isUpdated, isNew } = resolveDiffFromGCal({
-    notionEvent: existingNotionEvent,
-    gcalEvent: existingGCalEvent,
-  });
-
-  try {
-    if (isDeleted && existingNotionEvent) {
-      await notion.deleteEvent(existingNotionEvent);
-    } else if (isUpdated) {
-      const updatedEvent = {
-        ...existingNotionEvent!,
-        ...existingGCalEvent,
-      };
-      await notion.updateEvent(updatedEvent);
-    } else if (isNew) {
-      await notion.createEvent(existingGCalEvent);
-    }
-  } catch (e) {
-    console.error(e);
-    return c.status(500);
-  }
-
-  return c.json({
-    success: true,
-    message: "ok",
-  });
-});
+/**
+ * @summary Watch Google Calendar and Sync with Notion
+ * @desc
+ * 1. Fetch Existing Events from Google Calendar
+ * 2. Get the cached events from KV
+ * 3. Compare the two
+ * 4. If there are new events, create new pages in Notion
+ * 5. If there are deleted events, delete the pages in Notion
+ * 6. If there are updated events, update the pages in Notion
+ * @param env Bindings
+ * @returns void
+ */
 
 const watchGCal = async (env: Bindings) => {
+  console.log('------ Start Sync ------');
+  console.log('GCal 👉 Notion: Start', new Date().toLocaleString());
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const events = await gcal.getExistingEvents();
-  if (!events.items || events.items.length === 0) return console.log("WatchGCal: No events found.");
+  const events = await gcal.getEvents();
+  const sortedEvents = sortEvents(events);
+  console.log('GCal 👉 Notion: Incoming Events', sortedEvents);
 
-  // Webhook 経由での差分更新用に SyncToken を保存
-  const nextSyncToken = events.nextSyncToken;
-  if (nextSyncToken) env.GOOGLE_SYNC_TOKEN.put("syncToken", nextSyncToken);
+  const cache = await env.NOTION_CACHE.get('cache');
+  const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
+  console.log('GCal 👉 Notion: Cached Events', cachedEvents);
 
-  const existingNotionEvents = await notion.getExistingEvents();
+  if (!cache) {
+    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    return console.log('GCal 👉 Notion: Cache Does Not Exist, Created New Cache');
+  }
 
-  const { newEvents, deletedEvents, updatedEvents } = resolveDiffsFromGCal({
-    notionEvents: existingNotionEvents,
-    gcalEvents: events.items,
-  });
+  if (cache === JSON.stringify(sortedEvents)) {
+    console.log('GCal 👉 Notion: No Changes');
+    return console.log('------ End Sync ------');
+  }
 
-  const isDeleted = deletedEvents?.length > 0;
-  const isUpdated = updatedEvents?.length > 0;
-  const isNew = newEvents?.length > 0;
+  const { newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated } = compareEventsWithCache(
+    sortedEvents,
+    cachedEvents
+  );
+
+  console.log('GCal 👉 Notion: Diff Found', 'new:', newEvents, 'delete:', deletedEvents, 'update:', updatedEvents);
+
+  let eventsToBeCached = sortedEvents;
 
   try {
     if (isDeleted) {
@@ -135,42 +76,68 @@ const watchGCal = async (env: Bindings) => {
       await notion.updateEvents(updatedEvents);
     }
     if (isNew) {
-      await notion.createEvents(newEvents);
+      const events = await notion.createEvents(newEvents); // At this point, the new event on Google Calendar has no pageId
+      await gcal.updateEvents(events); // Update the event on Google Calendar with the pageId
+      eventsToBeCached = sortEvents(sortedEvents.filter((event) => event.pageId).concat(events));
     }
   } catch (e) {
-    console.error(e);
+    console.error('GCal 👉 Notion: Failed 💀', e);
     return;
   }
 
-  return console.log("WatchGCal: Synced successfully.");
+  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  console.log('GCal 👉 Notion: Updated Cache');
+
+  console.log('GCal 👉 Notion: Synced successfully ✨');
+  return console.log('------ End Sync ------');
 };
 
+/**
+ * @summary Watch Notion and Sync with Google Calendar
+ * @desc
+ * 1. Fetch Existing Events from Notion
+ * 2. Get the cached events from KV
+ * 3. Compare the two
+ * 4. If there are new events, create new events in Google Calendar
+ * 5. If there are deleted events, delete the events in Google Calendar
+ * 6. If there are updated events, update the events in Google Calendar
+ * @param env Bindings
+ * @returns void
+ */
+
 const watchNotion = async (env: Bindings) => {
+  console.log('------ Start Sync ------');
+  console.log('Notion 👉 GCal: Start', new Date().toLocaleString());
+
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const syncing = await env.LAST_SYNC.get("lastSync");
-  if (syncing === "true") {
-    console.error("WatchNotion: Lock");
-    return;
+  const events = await notion.getEvents();
+  const sortedEvents = sortEvents(events);
+  console.log('Notion 👉 GCal: Incoming Events', sortedEvents);
+
+  const cache = await env.NOTION_CACHE.get('cache');
+  const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
+  console.log('Notion 👉 GCal: Cached Events', cachedEvents);
+
+  if (!cache) {
+    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    return console.log('Notion 👉 GCal: Cache Does Not Exist, Created New Cache');
   }
-  const events = await notion.getExistingEvents();
 
-  if (!events || events.length === 0) return console.log("WatchNotion: no events");
+  if (cache === JSON.stringify(sortedEvents)) {
+    console.log('Notion 👉 GCal: No Changes');
+    return console.log('------ End Sync ------');
+  }
 
-  const existingGCalEvents = await gcal.getExistingEvents();
-  if (!existingGCalEvents.items || existingGCalEvents.items.length === 0) return;
+  const { newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated } = compareEventsWithCache(
+    sortedEvents,
+    cachedEvents
+  );
 
-  const { deletedEvents, newEvents, updatedEvents } = resolveDiffsFromNotion({
-    notionEvents: events,
-    gcalEvents: existingGCalEvents.items,
-  });
+  console.log('Notion 👉 GCal: Diff Found', 'new:', newEvents, 'delete:', deletedEvents, 'update:', updatedEvents);
 
-  const isDeleted = deletedEvents.length > 0;
-  const isUpdated = updatedEvents.length > 0;
-  const isNew = newEvents.length > 0;
-
-  await env.LAST_SYNC.put("lastSync", "true");
+  let eventsToBeCached = sortedEvents;
 
   try {
     if (isDeleted) {
@@ -180,28 +147,35 @@ const watchNotion = async (env: Bindings) => {
       await gcal.updateEvents(updatedEvents);
     }
     if (isNew) {
-      const events = await gcal.createEvents(newEvents);
-      await notion.updateEvents(events);
+      const events = await gcal.createEvents(newEvents); // At this point, the new event on Notion has no eventId
+      await notion.updateEvents(events); // Update the event on Notion with the eventId
+      eventsToBeCached = sortEvents(sortedEvents.filter((event) => event.id).concat(events));
     }
   } catch (e) {
-    console.error(e);
+    console.error('Notion 👉 GCal: Failed 💀', e);
     return;
   }
 
-  await env.LAST_SYNC.put("lastSync", "false");
+  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  console.log('Notion 👉 GCal: Updated Cache');
 
-  return console.log("WatchNotion: Synced successfully.");
+  console.log('Notion 👉 GCal: Synced successfully ✨');
+  return console.log('------ End Sync ------');
 };
 
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     switch (event.cron) {
-      case "*/1 * * * *":
+      case '*/1 * * * *':
+        const start = Date.now();
+        console.log('🔥🔥🔥 #1: Sync Notion 👉 Google Calendar 🔥🔥🔥');
         await watchNotion(env);
-        break;
-      case "0 0 * * sun":
+        console.log('🔥🔥🔥 #2: Sync Google Calendar 👉 Notion 🔥🔥🔥');
         await watchGCal(env);
+        const end = Date.now();
+        const elapsed = end - start;
+        console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
         break;
     }
   },
