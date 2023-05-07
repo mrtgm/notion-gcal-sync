@@ -61,12 +61,13 @@ class NotionAPI {
           direction: 'ascending',
         },
       ],
-      page_size: 100,
+      page_size: 50,
       filter: {
         and: [
           {
             property: 'Date',
             date: {
+              after: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
               before: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             },
           },
@@ -78,29 +79,9 @@ class NotionAPI {
   }
 
   /**
-   * Find a task with a specific tag
-   * @param tag {string | undefined | null} Tag to filter by
-   * @returns Event | null
-   */
-  async getParentByTag(tag: string | undefined | null) {
-    if (!tag) return null;
-
-    const { results } = await this.client.databases.query({
-      database_id: this.databaseId,
-      filter: {
-        property: 'Tag',
-        rich_text: {
-          equals: tag,
-        },
-      },
-    });
-
-    if (results.length === 0) return null;
-    return results[0];
-  }
-
-  /**
    * Delete events from Notion
+   * If the event has attendees, it will not be deleted.
+   *
    * @param events {Event[]} Events to delete
    */
   async deleteEvents(events: Event[]) {
@@ -161,15 +142,11 @@ class NotionAPI {
                   },
                 }
               : {}),
-            ...(event.tag
-              ? {
-                  Tag: {
-                    select: {
-                      name: event.tag,
-                    },
-                  },
-                }
-              : {}),
+            Tag: {
+              select: {
+                name: event.tag ?? '',
+              },
+            },
             'Event Id': {
               rich_text: [
                 {
@@ -218,15 +195,11 @@ class NotionAPI {
                   },
                 }
               : {}),
-            ...(event.tag
-              ? {
-                  Tag: {
-                    select: {
-                      name: event.tag,
-                    },
-                  },
-                }
-              : {}),
+            Tag: {
+              select: {
+                name: event.tag ?? '',
+              },
+            },
             'Event Id': {
               rich_text: [
                 {

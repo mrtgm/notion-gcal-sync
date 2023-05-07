@@ -77,7 +77,10 @@ const watchGCal = async (env: Bindings) => {
     if (isNew) {
       const events = await notion.createEvents(newEvents); // At this point, the new event on Google Calendar has no pageId
       await gcal.updateEvents(events); // Update the event on Google Calendar with the pageId
-      eventsToBeCached = sortEvents(sortedEvents.filter((event) => event.pageId).concat(events));
+
+      eventsToBeCached = sortEvents(
+        sortedEvents.filter((event) => !events.some((e) => e.id === event.id)).concat(events)
+      );
     }
   } catch (e) {
     console.error('GCal 👉 Notion: Failed 💀', e);

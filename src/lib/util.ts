@@ -28,6 +28,39 @@ export const normDate = (str: string) => {
 };
 
 /**
+ * Compute start and end date for Google Calendar API.
+ * If end date is not specified, set start date to 10:00 and end date to 11:00 (JST).
+ *
+ * @param start
+ * @param end
+ * @returns
+ */
+export const computeDate = (start: string, end: string | null | undefined) => {
+  if (!end) {
+    const exStart = new Date(start);
+    exStart.setHours(1); // JST: 10
+    const exEnd = new Date(start);
+    exEnd.setHours(2); // JST: 11
+    return {
+      start: {
+        dateTime: exStart.toISOString(),
+      },
+      end: {
+        dateTime: exEnd.toISOString(),
+      },
+    };
+  }
+  return {
+    start: {
+      dateTime: start,
+    },
+    end: {
+      dateTime: end,
+    },
+  };
+};
+
+/**
  * Separate tag from title. Tag is enclosed in square brackets.
  * @example parseTag('[tag] title') // { tag: 'tag', title: 'title' }
  * @param str String to parse

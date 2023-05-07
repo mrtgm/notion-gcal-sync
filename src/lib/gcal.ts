@@ -1,7 +1,7 @@
 import { calendar_v3 } from '@googleapis/calendar';
 import { getGoogleAuthToken } from './auth';
 import { Event } from '../type';
-import { joinTag, normDate, normStr, parseTag } from './util';
+import { computeDate, joinTag, normDate, normStr, parseTag } from './util';
 
 class GCalAPI {
   scope = 'https://www.googleapis.com/auth/calendar';
@@ -61,15 +61,18 @@ class GCalAPI {
   }
 
   /**
-   * Fetch max 100 events within the next 7 days from Google Calendar, with the earliest date first.
+   * Fetch max 30 events within the next 7 days from Google Calendar, with the earliest date first.
+   * The event with attendees will be ignored.
+   *
    * @returns Event[]
    */
   async getEvents() {
     const query: calendar_v3.Params$Resource$Events$List = {
+      timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
       timeMax: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       singleEvents: true,
       orderBy: 'startTime',
-      maxResults: 100,
+      maxResults: 50,
     };
 
     const qs = new URLSearchParams(query as any).toString();
@@ -84,7 +87,10 @@ class GCalAPI {
     });
 
     const { items }: calendar_v3.Schema$Events = await response?.json();
-    return items?.map((event) => this.formatEvent(event)) || [];
+
+    // Filter out events not organized by self and events with attendees
+    const filteredEvents = items?.filter((event) => event.organizer?.self && !event.attendees);
+    return filteredEvents?.map((event) => this.formatEvent(event)) || [];
   }
 
   /**
@@ -108,12 +114,16 @@ class GCalAPI {
 
   /**
    * Create events on Google Calendar
+   * - If the event has tag 'Me', the event will be created as private.
+   * - If the event has only start date, the event will be created as 10.00 - 11.00.
+   *
    * @param events Events to be created
    * @returns Event[] Created events
    */
   async createEvents(events: Event[]) {
     const promises = events.map(async (event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events`;
+
       const res = await fetch(url, {
         method: 'POST',
         headers: {
@@ -122,17 +132,15 @@ class GCalAPI {
         },
         body: JSON.stringify({
           summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
-          start: {
-            dateTime: event.start,
-          },
-          end: {
-            dateTime: event.end,
-          },
+          ...computeDate(event.start, event.end),
           extendedProperties: {
             private: {
               pageId: event.pageId,
             },
           },
+          ...(event.tag === 'ME' && {
+            visibility: 'private',
+          }),
         }),
       });
       const json = (await res.json()) as calendar_v3.Schema$Event;
@@ -146,6 +154,8 @@ class GCalAPI {
 
   /**
    * Update events on Google Calendar
+   * If the event has tag 'Me', the event will be created as private.
+   *
    * @param events Events to be updated
    */
   async updateEvents(events: Event[]) {
@@ -159,17 +169,15 @@ class GCalAPI {
         },
         body: JSON.stringify({
           summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
-          start: {
-            dateTime: event.start,
-          },
-          end: {
-            dateTime: event.end,
-          },
+          ...computeDate(event.start, event.end),
           extendedProperties: {
             private: {
               pageId: event.pageId,
             },
           },
+          ...(event.tag === 'ME' && {
+            visibility: 'private',
+          }),
         }),
       });
       const json = (await res.json()) as calendar_v3.Schema$Event;
