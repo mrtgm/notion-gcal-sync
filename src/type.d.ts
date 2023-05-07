@@ -21,5 +21,5 @@ type Event = {
   start: string;
   end: string;
   pageId?: string;
-  isMilestone: boolean;
+  isM: boolean; // isMilestone
 };

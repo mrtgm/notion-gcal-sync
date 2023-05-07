@@ -34,7 +34,7 @@ class GCalAPI {
     const end = normDate(event.end?.dateTime || '');
     const preTitle = normStr(event.summary || '');
     const pageId = normStr(event.extendedProperties?.private?.pageId || '');
-    const isMilestone = event.start?.date ? true : false;
+    const isM = event.start?.date ? true : false;
 
     const { tag, title } = parseTag(preTitle);
 
@@ -45,7 +45,7 @@ class GCalAPI {
       start,
       end,
       pageId,
-      isMilestone,
+      isM,
     };
   }
 
@@ -89,8 +89,6 @@ class GCalAPI {
     });
 
     const { items }: calendar_v3.Schema$Events = await response?.json();
-
-    console.log(items);
 
     // Filter out events not organized by self and events with attendees
     const filteredEvents = items?.filter((event) => event.organizer?.self && !event.attendees);
@@ -136,7 +134,7 @@ class GCalAPI {
         },
         body: JSON.stringify({
           summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
-          ...computeDate(event.start, event.end, event.isMilestone),
+          ...computeDate(event.start, event.end, event.isM),
           extendedProperties: {
             private: {
               pageId: event.pageId,
@@ -173,7 +171,7 @@ class GCalAPI {
         },
         body: JSON.stringify({
           summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
-          ...computeDate(event.start, event.end, event.isMilestone),
+          ...computeDate(event.start, event.end, event.isM),
           extendedProperties: {
             private: {
               pageId: event.pageId,
