@@ -30,6 +30,15 @@ const toLocaleIsoString = (date: any) => {
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}${timezone}`;
 };
 
+/** Normalize string
+ * @param str String to normalize
+ * @returns {string} Normalized string
+ */
+export const normStr = (str: string) => {
+  if (!str) return '';
+  return str.trim();
+};
+
 /**
  * Normalize date string to ISO 8601 format
  * @param str Date string to normalize
@@ -52,8 +61,31 @@ export const parseTag = (str: string) => {
   const match = regex.exec(str);
   return {
     tag: match ? match[1] : '',
-    title: match ? str.replace(match[0], '') : str,
+    title: normStr(match ? str.replace(match[0], '') : str),
   };
+};
+
+/**
+ * Enclose string with tag
+ * @param str String to enclose
+ */
+export const joinTag = (str: string, tag: string) => {
+  return `[${tag}] ${str}`;
+};
+
+/**
+ * Sort Events by start date and title
+ */
+export const sortEvents = (events: Event[]) => {
+  return events.sort((a, b) => {
+    if (a.start > b.start) return -1;
+    else if (a.start < b.start) return 1;
+    else {
+      if (a.title > b.title) return 1;
+      else if (a.title < b.title) return -1;
+      else return 0;
+    }
+  });
 };
 
 /**
@@ -62,7 +94,7 @@ export const parseTag = (str: string) => {
  * @param cachedEvents Cached events from KV
  * @returns Events to be created, deleted, updated. And flags to indicate if there are any changes.
  */
-export const compareWithCache = (events: Event[], cachedEvents: Event[]) => {
+export const compareEventsWithCache = (events: Event[], cachedEvents: Event[]) => {
   const newEvents = events.filter((event) => {
     return !cachedEvents.some((cachedEvent) => cachedEvent.id === event.id);
   });

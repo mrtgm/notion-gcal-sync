@@ -1,7 +1,7 @@
 import { calendar_v3 } from '@googleapis/calendar';
 import { getGoogleAuthToken } from './auth';
 import { Event } from '../type';
-import { normDate, parseTag } from './util';
+import { joinTag, normDate, normStr, parseTag } from './util';
 
 class GCalAPI {
   scope = 'https://www.googleapis.com/auth/calendar';
@@ -32,8 +32,8 @@ class GCalAPI {
     const id = event.id || '';
     const start = normDate(event.start?.dateTime || event.start?.date || '');
     const end = normDate(event.end?.dateTime || event.end?.date || '');
-    const preTitle = event.summary || '';
-    const pageId = event.extendedProperties?.private?.pageId || '';
+    const preTitle = normStr(event.summary || '');
+    const pageId = normStr(event.extendedProperties?.private?.pageId || '');
 
     const { tag, title } = parseTag(preTitle);
 
@@ -64,7 +64,7 @@ class GCalAPI {
    * Fetch max 100 events within the next 7 days from Google Calendar, with the earliest date first.
    * @returns Event[]
    */
-  async getExistingEvents() {
+  async getEvents() {
     const query: calendar_v3.Params$Resource$Events$List = {
       timeMax: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       singleEvents: true,
@@ -121,7 +121,7 @@ class GCalAPI {
           Authorization: `Bearer ${this._accessToken}`,
         },
         body: JSON.stringify({
-          summary: `${event.tag} ${event.title}`,
+          summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
           start: {
             dateTime: event.start,
           },
@@ -139,8 +139,9 @@ class GCalAPI {
       return json;
     });
     const res = await Promise.all(promises);
-    console.log('Google Calendar: Creation Finished');
-    return res.map((event, i) => this.formatEvent(event));
+    const createdEvents = res.map((event, i) => this.formatEvent(event));
+    console.log('Google Calendar: Creation Finished', createdEvents);
+    return createdEvents;
   }
 
   /**
@@ -148,16 +149,16 @@ class GCalAPI {
    * @param events Events to be updated
    */
   async updateEvents(events: Event[]) {
-    const promises = events.map((event) => {
+    const promises = events.map(async (event) => {
       const url = `${this.baseUrl}/${this.calendarId}/events/${event.id}`;
-      return fetch(url, {
+      const res = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this._accessToken}`,
         },
         body: JSON.stringify({
-          summary: `${event.tag} ${event.title}`,
+          summary: !!event.tag ? joinTag(event.title, event.tag) : event.title,
           start: {
             dateTime: event.start,
           },
@@ -171,9 +172,13 @@ class GCalAPI {
           },
         }),
       });
+      const json = (await res.json()) as calendar_v3.Schema$Event;
+      return json;
     });
-    await Promise.all(promises);
-    console.log('Google Calendar: Update Finished');
+    const res = await Promise.all(promises);
+    const updatedEvents = res.map((event, i) => this.formatEvent(event));
+    console.log('Google Calendar: Update Finished', updatedEvents);
+    return updatedEvents;
   }
 }
 

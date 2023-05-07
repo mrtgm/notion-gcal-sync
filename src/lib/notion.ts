@@ -1,5 +1,5 @@
 import { Client } from '@notionhq/client';
-import { nonNullable, normDate, parseTag } from './util';
+import { nonNullable, normDate, normStr, parseTag } from './util';
 import { Event } from '../type';
 import { PageObjectResponse, PartialPageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 
@@ -33,8 +33,10 @@ class NotionAPI {
     const pageId = event.id;
     const start = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.start ?? '' : '');
     const end = normDate(event.properties['Date'].type === 'date' ? event.properties['Date'].date?.end ?? '' : '');
-    const preTitle = event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : '';
-    const { tag, title } = parseTag(preTitle);
+    const title = normStr(
+      event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : ''
+    );
+    const tag = normStr(event.properties['Tag'].type === 'select' ? event.properties['Tag'].select?.name ?? '' : '');
 
     return {
       id,
@@ -72,8 +74,7 @@ class NotionAPI {
       },
     });
 
-    const existingEvents = results.map(this.formatEvent);
-    return existingEvents.filter(nonNullable);
+    return results.map(this.formatEvent).filter(nonNullable);
   }
 
   /**
@@ -103,9 +104,16 @@ class NotionAPI {
    * @param events {Event[]} Events to delete
    */
   async deleteEvents(events: Event[]) {
+    const eventsToDelete = events.filter(
+      (event: Event): event is Omit<Event, 'pageId'> & { pageId: string } => !!event.pageId
+    );
+
+    if (events.length !== eventsToDelete.length) {
+      console.log('Notion: Some events are not deleted because they do not have pageId');
+    }
+
     await Promise.all(
-      events.map(async (event) => {
-        if (!event?.pageId) return;
+      eventsToDelete.map(async (event) => {
         const response = await this.client.pages.update({
           page_id: event.pageId,
           archived: true,
@@ -121,11 +129,18 @@ class NotionAPI {
    * @param events {Event[]} Events to update
    */
   async updateEvents(events: Event[]) {
-    await Promise.all(
-      events.map(async (event) => {
-        if (!event?.pageId) return;
+    const eventsToUpdate = events.filter(
+      (event: Event): event is Omit<Event, 'pageId'> & { pageId: string } => !!event.pageId
+    );
+
+    if (events.length !== eventsToUpdate.length) {
+      console.log('Notion: Some events are not updated because they do not have pageId');
+    }
+
+    const res = await Promise.all(
+      eventsToUpdate.map(async (event) => {
         const response = await this.client.pages.update({
-          page_id: event.pageId ?? '',
+          page_id: event.pageId,
           properties: {
             Name: {
               title: [
@@ -146,6 +161,15 @@ class NotionAPI {
                   },
                 }
               : {}),
+            ...(event.tag
+              ? {
+                  Tag: {
+                    select: {
+                      name: event.tag,
+                    },
+                  },
+                }
+              : {}),
             'Event Id': {
               rich_text: [
                 {
@@ -160,7 +184,8 @@ class NotionAPI {
         return response;
       })
     );
-    console.log('Notion: Update Finished');
+    const updatedEvents = res.map(this.formatEvent).filter(nonNullable);
+    console.log('Notion: Update Finished', updatedEvents);
   }
 
   /**
@@ -171,7 +196,6 @@ class NotionAPI {
   async createEvents(events: Event[]) {
     const res = await Promise.all(
       events.map(async (event) => {
-        const parent = await this.getParentByTag(event?.tag);
         const response = await this.client.pages.create({
           parent: { database_id: this.databaseId },
           properties: {
@@ -194,6 +218,15 @@ class NotionAPI {
                   },
                 }
               : {}),
+            ...(event.tag
+              ? {
+                  Tag: {
+                    select: {
+                      name: event.tag,
+                    },
+                  },
+                }
+              : {}),
             'Event Id': {
               rich_text: [
                 {
@@ -203,22 +236,14 @@ class NotionAPI {
                 },
               ],
             },
-            'Parent Item': {
-              relation: parent
-                ? [
-                    {
-                      id: parent.id,
-                    },
-                  ]
-                : [],
-            },
           },
         });
         return response;
       })
     );
-    console.log('Notion: Creation Finished');
-    return res.map(this.formatEvent).filter(nonNullable);
+    const createdEvents = res.map(this.formatEvent).filter(nonNullable);
+    console.log('Notion: Creation Finished', createdEvents);
+    return createdEvents;
   }
 }
 
