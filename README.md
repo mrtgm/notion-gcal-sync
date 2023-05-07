@@ -18,6 +18,7 @@ A simple script to do 2 way-sync between Notion and Google Calendar using Cloudf
    - `Date`: start / end date with time
    - `Event Id`: rich text
    - `Tag`: select
+   - `Milestone`: checkbox
 3. Create a new integration in Notion and get the token. See: [Notion doc](https://developers.notion.com/docs/create-a-notion-integration#step-1-create-an-integration)
 4. Create a new service account in Google Cloud Console and download the JSON key.
 5. In Google Calendar, go to `Settings and sharing` -> `Share with specific people` and add the service account email with `Make changes to events` permission.
@@ -33,6 +34,10 @@ A simple script to do 2 way-sync between Notion and Google Calendar using Cloudf
 
 The title of the event in Google Calendar enclosed in `[]` will be treated as tag in Notion. For example, `[Me]` will be treated as `Me`.
 If the event has tag `Me`, the event will be created as private.
+
+## Milestone
+
+If the event in Notion has `Milestone` checked, the event will be created as all day event in Google Calendar.
 
 ## Caveats
 

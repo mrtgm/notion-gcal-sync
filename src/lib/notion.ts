@@ -1,5 +1,5 @@
 import { Client } from '@notionhq/client';
-import { nonNullable, normDate, normStr, parseTag } from './util';
+import { convertToDateString, nonNullable, normDate, normStr, parseTag } from './util';
 import { Event } from '../type';
 import { PageObjectResponse, PartialPageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 
@@ -37,6 +37,8 @@ class NotionAPI {
       event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : ''
     );
     const tag = normStr(event.properties['Tag'].type === 'select' ? event.properties['Tag'].select?.name ?? '' : '');
+    const isMilestone =
+      event.properties['Milestone'].type === 'checkbox' ? event.properties['Milestone'].checkbox : false;
 
     return {
       id,
@@ -45,6 +47,7 @@ class NotionAPI {
       start,
       end,
       pageId,
+      isMilestone,
     };
   }
 
@@ -136,8 +139,9 @@ class NotionAPI {
               ? {
                   Date: {
                     date: {
-                      start: event.start,
-                      end: event.end,
+                      // If the event is a milestone, set the end date to null
+                      start: event.isMilestone ? convertToDateString(new Date(event.start)) : event.start,
+                      end: event.isMilestone ? null : event.end,
                     },
                   },
                 }
@@ -148,6 +152,9 @@ class NotionAPI {
                     name: event.tag,
                   }
                 : null,
+            },
+            Milestone: {
+              checkbox: event.isMilestone,
             },
             'Event Id': {
               rich_text: [
@@ -191,8 +198,9 @@ class NotionAPI {
               ? {
                   Date: {
                     date: {
-                      start: event.start,
-                      end: event.end,
+                      // If the event is a milestone, set the end date to null
+                      start: event.isMilestone ? convertToDateString(new Date(event.start)) : event.start,
+                      end: event.isMilestone ? null : event.end,
                     },
                   },
                 }
@@ -203,6 +211,9 @@ class NotionAPI {
                     name: event.tag,
                   }
                 : null,
+            },
+            Milestone: {
+              checkbox: event.isMilestone,
             },
             'Event Id': {
               rich_text: [
