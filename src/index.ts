@@ -10,8 +10,7 @@ type Bindings = {
   google_calendar_id: string;
   notion_token: string;
   notion_database_id: string;
-  GOOGLE_SYNC_TOKEN: KVNamespace;
-  NOTION_CACHE: KVNamespace;
+  EVENTS_CACHE: KVNamespace;
 };
 
 const app = new Hono<{
@@ -45,12 +44,12 @@ const watchGCal = async (env: Bindings) => {
   const sortedEvents = sortEvents(events);
   console.log('GCal 👉 Notion: Incoming Events', sortedEvents);
 
-  const cache = await env.NOTION_CACHE.get('cache');
+  const cache = await env.EVENTS_CACHE.get('cache');
   const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
   console.log('GCal 👉 Notion: Cached Events', cachedEvents);
 
   if (!cache) {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    await env.EVENTS_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('GCal 👉 Notion: Cache Does Not Exist, Created New Cache');
   }
 
@@ -85,7 +84,7 @@ const watchGCal = async (env: Bindings) => {
     return;
   }
 
-  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
   console.log('GCal 👉 Notion: Updated Cache');
 
   console.log('GCal 👉 Notion: Synced successfully ✨');
@@ -116,12 +115,12 @@ const watchNotion = async (env: Bindings) => {
   const sortedEvents = sortEvents(events);
   console.log('Notion 👉 GCal: Incoming Events', sortedEvents);
 
-  const cache = await env.NOTION_CACHE.get('cache');
+  const cache = await env.EVENTS_CACHE.get('cache');
   const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
   console.log('Notion 👉 GCal: Cached Events', cachedEvents);
 
   if (!cache) {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    await env.EVENTS_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('Notion 👉 GCal: Cache Does Not Exist, Created New Cache');
   }
 
@@ -156,7 +155,7 @@ const watchNotion = async (env: Bindings) => {
     return;
   }
 
-  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
   console.log('Notion 👉 GCal: Updated Cache');
 
   console.log('Notion 👉 GCal: Synced successfully ✨');
