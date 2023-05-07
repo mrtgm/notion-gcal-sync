@@ -143,9 +143,11 @@ class NotionAPI {
                 }
               : {}),
             Tag: {
-              select: {
-                name: event.tag ?? '',
-              },
+              select: event.tag
+                ? {
+                    name: event.tag,
+                  }
+                : null,
             },
             'Event Id': {
               rich_text: [
@@ -196,9 +198,11 @@ class NotionAPI {
                 }
               : {}),
             Tag: {
-              select: {
-                name: event.tag ?? '',
-              },
+              select: event.tag
+                ? {
+                    name: event.tag,
+                  }
+                : null,
             },
             'Event Id': {
               rich_text: [
