@@ -18,6 +18,21 @@ const app = new Hono<{
 }>();
 
 app.get('/', async (c) => {
+  try {
+    const start = Date.now();
+    console.log('🔥🔥🔥 #1: Sync Notion 👉 Google Calendar 🔥🔥🔥');
+    await watchNotion(c.env);
+    console.log('🔥🔥🔥 #2: Sync Google Calendar 👉 Notion 🔥🔥🔥');
+    await watchGCal(c.env);
+    const end = Date.now();
+    const elapsed = end - start;
+    console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
+  } catch (e) {
+    console.error(e);
+    c.status(500);
+    return c.text('error');
+  }
+
   return c.text('ok');
 });
 
@@ -84,7 +99,7 @@ const watchGCal = async (env: Bindings) => {
     }
   } catch (e) {
     console.error('GCal 👉 Notion: Failed 💀', e);
-    return;
+    throw new Error('Failed 💀');
   }
 
   await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
@@ -155,7 +170,7 @@ const watchNotion = async (env: Bindings) => {
     }
   } catch (e) {
     console.error('Notion 👉 GCal: Failed 💀', e);
-    return;
+    throw new Error('Failed 💀');
   }
 
   await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
@@ -163,22 +178,4 @@ const watchNotion = async (env: Bindings) => {
 
   console.log('Notion 👉 GCal: Synced successfully ✨');
   return console.log('------ End Sync ------');
-};
-
-export default {
-  fetch: app.fetch,
-  async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
-    switch (event.cron) {
-      case '*/1 * * * *':
-        const start = Date.now();
-        console.log('🔥🔥🔥 #1: Sync Notion 👉 Google Calendar 🔥🔥🔥');
-        await watchNotion(env);
-        console.log('🔥🔥🔥 #2: Sync Google Calendar 👉 Notion 🔥🔥🔥');
-        await watchGCal(env);
-        const end = Date.now();
-        const elapsed = end - start;
-        console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
-        break;
-    }
-  },
 };
