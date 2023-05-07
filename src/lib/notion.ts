@@ -1,5 +1,5 @@
 import { Client } from '@notionhq/client';
-import { nonNullable, normDate, normStr, parseTag } from './util';
+import { convertToDateString, nonNullable, normDate, normStr, parseTag } from './util';
 import { Event } from '../type';
 import { PageObjectResponse, PartialPageObjectResponse } from '@notionhq/client/build/src/api-endpoints';
 
@@ -37,6 +37,7 @@ class NotionAPI {
       event.properties['Name'].type === 'title' ? event.properties['Name'].title[0].plain_text : ''
     );
     const tag = normStr(event.properties['Tag'].type === 'select' ? event.properties['Tag'].select?.name ?? '' : '');
+    const isM = event.properties['Milestone'].type === 'checkbox' ? event.properties['Milestone'].checkbox : false;
 
     return {
       id,
@@ -45,6 +46,7 @@ class NotionAPI {
       start,
       end,
       pageId,
+      isM,
     };
   }
 
@@ -61,12 +63,13 @@ class NotionAPI {
           direction: 'ascending',
         },
       ],
-      page_size: 100,
+      page_size: 50,
       filter: {
         and: [
           {
             property: 'Date',
             date: {
+              after: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
               before: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             },
           },
@@ -78,29 +81,9 @@ class NotionAPI {
   }
 
   /**
-   * Find a task with a specific tag
-   * @param tag {string | undefined | null} Tag to filter by
-   * @returns Event | null
-   */
-  async getParentByTag(tag: string | undefined | null) {
-    if (!tag) return null;
-
-    const { results } = await this.client.databases.query({
-      database_id: this.databaseId,
-      filter: {
-        property: 'Tag',
-        rich_text: {
-          equals: tag,
-        },
-      },
-    });
-
-    if (results.length === 0) return null;
-    return results[0];
-  }
-
-  /**
    * Delete events from Notion
+   * If the event has attendees, it will not be deleted.
+   *
    * @param events {Event[]} Events to delete
    */
   async deleteEvents(events: Event[]) {
@@ -155,21 +138,23 @@ class NotionAPI {
               ? {
                   Date: {
                     date: {
-                      start: event.start,
-                      end: event.end,
+                      // If the event is a milestone, set the end date to null
+                      start: event.isM ? convertToDateString(new Date(event.start)) : event.start,
+                      end: event.isM ? null : event.end,
                     },
                   },
                 }
               : {}),
-            ...(event.tag
-              ? {
-                  Tag: {
-                    select: {
-                      name: event.tag,
-                    },
-                  },
-                }
-              : {}),
+            Tag: {
+              select: event.tag
+                ? {
+                    name: event.tag,
+                  }
+                : null,
+            },
+            Milestone: {
+              checkbox: event.isM,
+            },
             'Event Id': {
               rich_text: [
                 {
@@ -212,21 +197,23 @@ class NotionAPI {
               ? {
                   Date: {
                     date: {
-                      start: event.start,
-                      end: event.end,
+                      // If the event is a milestone, set the end date to null
+                      start: event.isM ? convertToDateString(new Date(event.start)) : event.start,
+                      end: event.isM ? null : event.end,
                     },
                   },
                 }
               : {}),
-            ...(event.tag
-              ? {
-                  Tag: {
-                    select: {
-                      name: event.tag,
-                    },
-                  },
-                }
-              : {}),
+            Tag: {
+              select: event.tag
+                ? {
+                    name: event.tag,
+                  }
+                : null,
+            },
+            Milestone: {
+              checkbox: event.isM,
+            },
             'Event Id': {
               rich_text: [
                 {

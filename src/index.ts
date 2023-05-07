@@ -10,17 +10,12 @@ type Bindings = {
   google_calendar_id: string;
   notion_token: string;
   notion_database_id: string;
-  GOOGLE_SYNC_TOKEN: KVNamespace;
-  NOTION_CACHE: KVNamespace;
+  EVENTS_CACHE: KVNamespace;
 };
 
 const app = new Hono<{
   Bindings: Bindings;
 }>();
-
-app.get('/', async (c) => {
-  return c.text('ok');
-});
 
 /**
  * @summary Watch Google Calendar and Sync with Notion
@@ -45,12 +40,12 @@ const watchGCal = async (env: Bindings) => {
   const sortedEvents = sortEvents(events);
   console.log('GCal 👉 Notion: Incoming Events', sortedEvents);
 
-  const cache = await env.NOTION_CACHE.get('cache');
+  const cache = await env.EVENTS_CACHE.get('cache');
   const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
   console.log('GCal 👉 Notion: Cached Events', cachedEvents);
 
   if (!cache) {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    await env.EVENTS_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('GCal 👉 Notion: Cache Does Not Exist, Created New Cache');
   }
 
@@ -78,14 +73,17 @@ const watchGCal = async (env: Bindings) => {
     if (isNew) {
       const events = await notion.createEvents(newEvents); // At this point, the new event on Google Calendar has no pageId
       await gcal.updateEvents(events); // Update the event on Google Calendar with the pageId
-      eventsToBeCached = sortEvents(sortedEvents.filter((event) => event.pageId).concat(events));
+
+      eventsToBeCached = sortEvents(
+        sortedEvents.filter((event) => !events.some((e) => e.id === event.id)).concat(events)
+      );
     }
   } catch (e) {
     console.error('GCal 👉 Notion: Failed 💀', e);
-    return;
+    throw new Error('Failed 💀');
   }
 
-  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
   console.log('GCal 👉 Notion: Updated Cache');
 
   console.log('GCal 👉 Notion: Synced successfully ✨');
@@ -116,12 +114,12 @@ const watchNotion = async (env: Bindings) => {
   const sortedEvents = sortEvents(events);
   console.log('Notion 👉 GCal: Incoming Events', sortedEvents);
 
-  const cache = await env.NOTION_CACHE.get('cache');
+  const cache = await env.EVENTS_CACHE.get('cache');
   const cachedEvents: Event[] = cache ? JSON.parse(cache) : [];
   console.log('Notion 👉 GCal: Cached Events', cachedEvents);
 
   if (!cache) {
-    await env.NOTION_CACHE.put('cache', JSON.stringify(sortedEvents));
+    await env.EVENTS_CACHE.put('cache', JSON.stringify(sortedEvents));
     return console.log('Notion 👉 GCal: Cache Does Not Exist, Created New Cache');
   }
 
@@ -153,29 +151,39 @@ const watchNotion = async (env: Bindings) => {
     }
   } catch (e) {
     console.error('Notion 👉 GCal: Failed 💀', e);
-    return;
+    throw new Error('Failed 💀');
   }
 
-  await env.NOTION_CACHE.put('cache', JSON.stringify(eventsToBeCached));
+  await env.EVENTS_CACHE.put('cache', JSON.stringify(eventsToBeCached));
   console.log('Notion 👉 GCal: Updated Cache');
 
   console.log('Notion 👉 GCal: Synced successfully ✨');
   return console.log('------ End Sync ------');
 };
 
+const main = async (env: Bindings) => {
+  const start = Date.now();
+  console.log('🔥🔥🔥 #1: Sync Notion 👉 Google Calendar 🔥🔥🔥');
+  await watchNotion(env);
+  console.log('🔥🔥🔥 #2: Sync Google Calendar 👉 Notion 🔥🔥🔥');
+  await watchGCal(env);
+  const end = Date.now();
+  const elapsed = end - start;
+  console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
+  return;
+};
+
+app.get('/', async (c) => {
+  await main(c.env);
+  return c.text('ok');
+});
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     switch (event.cron) {
-      case '*/1 * * * *':
-        const start = Date.now();
-        console.log('🔥🔥🔥 #1: Sync Notion 👉 Google Calendar 🔥🔥🔥');
-        await watchNotion(env);
-        console.log('🔥🔥🔥 #2: Sync Google Calendar 👉 Notion 🔥🔥🔥');
-        await watchGCal(env);
-        const end = Date.now();
-        const elapsed = end - start;
-        console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
+      case '0 0 1 * *':
+        await main(env);
         break;
     }
   },

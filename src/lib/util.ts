@@ -7,29 +7,6 @@ import { Event } from '../type';
  */
 export const nonNullable = <T>(value: T): value is NonNullable<T> => value != null;
 
-const toLocaleIsoString = (date: any) => {
-  if (!(date instanceof Date)) {
-    date = new Date(date);
-  }
-  if (date.toString() === 'Invalid Date') {
-    return 'Invalid Date';
-  }
-
-  console.log('original date', date);
-
-  date.setHours(date.getHours() + 9);
-  const pad = (num: number) => String(num).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  const MM = pad(date.getMonth() + 1);
-  const dd = pad(date.getDate());
-  const hh = pad(date.getHours());
-  const mm = pad(date.getMinutes());
-  const ss = pad(date.getSeconds());
-  const tzMin = -540;
-  const timezone = `${tzMin >= 0 ? '+' : '-'}${pad(Math.floor(Math.abs(tzMin) / 60))}:${pad(Math.abs(tzMin) % 60)}`;
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}${timezone}`;
-};
-
 /** Normalize string
  * @param str String to normalize
  * @returns {string} Normalized string
@@ -48,6 +25,65 @@ export const normDate = (str: string) => {
   if (!str) return '';
   const date = new Date(str);
   return date.toISOString();
+};
+
+export const convertToDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  const dateString = `${year}-${month}-${day}`;
+
+  return dateString;
+};
+
+/**
+ * Compute start and end date for Google Calendar API.
+ * If end date is not specified, set start date to 10:00 and end date to 11:00 (JST).
+ * If end date is not specified and the event is a milestone, set date without time.
+ *
+ * @param start
+ * @param end
+ * @returns
+ */
+export const computeDate = (start: string, end: string | null | undefined, isMilestone: boolean) => {
+  if (!end) {
+    const exStart = new Date(start);
+    const exEnd = new Date(start);
+
+    if (isMilestone) {
+      exEnd.setDate(exStart.getDate() + 1);
+      return {
+        start: {
+          date: convertToDateString(exStart),
+        },
+        end: {
+          date: convertToDateString(exEnd),
+        },
+      };
+    }
+
+    exStart.setHours(1); // JST: 10
+    exEnd.setHours(2); // JST: 11
+
+    return {
+      start: {
+        dateTime: exStart.toISOString(),
+      },
+      end: {
+        dateTime: exEnd.toISOString(),
+      },
+    };
+  } else {
+    return {
+      start: {
+        dateTime: start,
+      },
+      end: {
+        dateTime: end,
+      },
+    };
+  }
 };
 
 /**
