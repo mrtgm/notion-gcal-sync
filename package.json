@@ -11,7 +11,11 @@
   "scripts": {
     "start": "wrangler dev --test-scheduled",
     "deploy": "wrangler publish",
-    "test": "vitest"
+    "test": "vitest",
+    "cache:preview:get": "npx wrangler kv:key get --namespace-id=7ca10ac99a2b40848cdd55a24dc4f32d cache",
+    "cache:preview:reset": "npx wrangler kv:key put --namespace-id=7ca10ac99a2b40848cdd55a24dc4f32d cache []",
+    "cache:get": "npx wrangler kv:key get --namespace-id=0477eeb9c2994badba9912cbc45da326 cache",
+    "cache:reset": "npx wrangler kv:key put --namespace-id=0477eeb9c2994badba9912cbc45da326 cache []"
   },
   "dependencies": {
     "@googleapis/calendar": "^6.0.0",
