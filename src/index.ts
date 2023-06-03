@@ -96,13 +96,16 @@ const watch = async (env: Bindings) => {
       if (eventsMapNotion.has(event.id) && eventsMapGCal.has(event.id)) {
         const notionEvent = eventsMapNotion.get(event.id);
         const gcalEvent = eventsMapGCal.get(event.id);
+        // If the event is updated in both notion and gcal, notion will be always prioritized.
         // notion ✅ gcal ✅ cache ✅ (updated in notion)
         if (notionEvent && !isEqualEvent(notionEvent, event)) {
           acc.gcal.add(notionEvent);
+          return acc;
         }
         // notion ✅ gcal ✅ cache ✅ (updated in gcal)
         if (gcalEvent && !isEqualEvent(gcalEvent, event)) {
           acc.notion.add(gcalEvent);
+          return acc;
         }
       }
       return acc;
