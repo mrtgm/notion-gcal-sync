@@ -142,6 +142,7 @@ class GCalAPI {
           },
           ...(event.tag === 'ME' && {
             visibility: 'private',
+            transparency: 'transparent',
           }),
         }),
       });

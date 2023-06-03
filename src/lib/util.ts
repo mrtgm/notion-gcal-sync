@@ -123,37 +123,3 @@ export const sortEvents = (events: Event[]) => {
     }
   });
 };
-
-/**
- * Compare the incoming events with the cached events
- * @param events  Incoming events from Google Calendar / Notion
- * @param cachedEvents Cached events from KV
- * @returns Events to be created, deleted, updated. And flags to indicate if there are any changes.
- */
-export const compareEventsWithCache = (events: Event[], cachedEvents: Event[]) => {
-  const newEvents = events.filter((event) => {
-    return !cachedEvents.some((cachedEvent) => cachedEvent.id === event.id);
-  });
-
-  const deletedEvents = cachedEvents.filter((cachedEvent) => {
-    return !events.some((event) => event.id === cachedEvent.id);
-  });
-
-  const updatedEvents = events.filter((event) => {
-    return cachedEvents.some((cachedEvent) => {
-      return (
-        event.id === cachedEvent.id &&
-        (event.title !== cachedEvent.title ||
-          event.tag !== cachedEvent.tag ||
-          event.start !== cachedEvent.start ||
-          event.end !== cachedEvent.end)
-      );
-    });
-  });
-
-  const isDeleted = deletedEvents?.length > 0;
-  const isUpdated = updatedEvents?.length > 0;
-  const isNew = newEvents?.length > 0;
-
-  return { newEvents, deletedEvents, updatedEvents, isNew, isDeleted, isUpdated };
-};
