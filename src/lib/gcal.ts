@@ -70,7 +70,7 @@ class GCalAPI {
    */
   async getEvents() {
     const query: calendar_v3.Params$Resource$Events$List = {
-      timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      timeMin: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       timeMax: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       singleEvents: true,
       orderBy: 'startTime',
@@ -142,6 +142,7 @@ class GCalAPI {
           },
           ...(event.tag === 'ME' && {
             visibility: 'private',
+            transparency: 'transparent',
           }),
         }),
       });

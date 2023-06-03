@@ -65,8 +65,13 @@ class NotionAPI {
           {
             property: 'Date',
             date: {
-              after: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
               before: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          },
+          {
+            property: 'Date',
+            date: {
+              after: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
             },
           },
         ],

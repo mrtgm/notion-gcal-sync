@@ -24,11 +24,9 @@ const watch = async (env: Bindings) => {
   const notion = new NotionAPI(env.notion_token, env.notion_database_id);
   const gcal = await GCalAPI.init(env.google_email, env.google_private_key, env.google_calendar_id);
 
-  const eventsNotion = await notion.getEvents();
+  const [eventsNotion, eventsGCal] = await Promise.all([notion.getEvents(), gcal.getEvents()]);
   const sortedEventsNotion = sortEvents(eventsNotion);
   const eventsMapNotion = new Map(sortEvents(eventsNotion).map((event) => [event.id, event]));
-
-  const eventsGCal = await gcal.getEvents();
   const sortedEventsGCal = sortEvents(eventsGCal);
   const eventsMapGCal = new Map(sortedEventsGCal.map((event) => [event.id, event]));
 
@@ -201,7 +199,7 @@ const main = async (env: Bindings) => {
   await watch(env);
   const end = Date.now();
   const elapsed = end - start;
-  console.log('🔥🔥🔥 #3: Sync Completed 🔥🔥🔥', elapsed.toString() + 'ms');
+  console.log('Sync: Elapsed', elapsed);
   return;
 };
 
