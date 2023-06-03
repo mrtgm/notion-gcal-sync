@@ -123,3 +123,10 @@ export const sortEvents = (events: Event[]) => {
     }
   });
 };
+
+/**
+ * Check if two events are equal
+ */
+export const isEqualEvent = (a: Event, b: Event) => {
+  return a.title === b.title && a.tag === b.tag && a.start === b.start && a.end === b.end;
+};
